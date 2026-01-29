@@ -206,23 +206,23 @@ export class TresorerieService {
       where: { code: '401' },
     });
     let totalSoldeFournisseurs = 0;
-    if (compteFournisseursFinal) {
+    if (compteFournisseurs) {
       const ecritures401 = await this.prisma.ecritureComptable.findMany({
         where: {
           societeId,
           OR: [
-            { compteDebitId: compteFournisseursFinal.id },
-            { compteCreditId: compteFournisseursFinal.id },
+            { compteDebitId: compteFournisseurs.id },
+            { compteCreditId: compteFournisseurs.id },
           ],
         },
       });
       let totalCredit = 0;
       let totalDebit = 0;
       for (const e of ecritures401) {
-        if (e.compteCreditId === compteFournisseursFinal.id) {
+        if (e.compteCreditId === compteFournisseurs.id) {
           totalCredit += Number(e.montant);
         }
-        if (e.compteDebitId === compteFournisseursFinal.id) {
+        if (e.compteDebitId === compteFournisseurs.id) {
           totalDebit += Number(e.montant);
         }
       }
