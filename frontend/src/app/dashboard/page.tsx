@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   BarChart,
   Bar,
@@ -16,15 +16,13 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis,
   Radar,
-  Legend,
 } from "recharts";
-import { PeriodPicker } from "../../../../components/PeriodPicker";
+import { PeriodPicker } from "../components/PeriodPicker";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 const ORANGE = "#ea580c";
-const ORANGE_LIGHT = "#fed7aa";
 const TEAL = "#14b8a6";
 
 interface DashboardData {
@@ -38,15 +36,6 @@ interface DashboardData {
   totalSoldeClients?: number;
   totalSoldeFournisseurs?: number;
   totalSoldeNotesFrais?: number;
-  from?: string | null;
-  to?: string | null;
-}
-
-interface GraphData {
-  mois: string;
-  recettes: number;
-  depenses: number;
-  resultat: number;
 }
 
 interface FactureImpayee {
@@ -67,10 +56,9 @@ function formatFCFA(n: number): string {
   return `${Number(n).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} FCFA`;
 }
 
-export default function ExpertSocieteDashboardPage() {
-  const params = useParams<{ id: string }>();
+export default function DashboardPage() {
   const router = useRouter();
-  const societeId = params.id;
+  const [societeId, setSocieteId] = useState<string | null>(null);
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(
@@ -82,7 +70,6 @@ export default function ExpertSocieteDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);
-  const [graphData, setGraphData] = useState<GraphData[]>([]);
   const [facturesImpayees, setFacturesImpayees] = useState<FactureImpayee[]>([]);
 
   const fromDate = `${selectedYear}-${selectedMonth}-01`;
@@ -94,8 +81,28 @@ export default function ExpertSocieteDashboardPage() {
   const toDate = `${selectedYear}-${selectedMonth}-${String(lastDay).padStart(2, "0")}`;
 
   useEffect(() => {
+    if (typeof window !== "undefined" && !localStorage.getItem("auth_token")) {
+      router.replace("/");
+      return;
+    }
+    async function loadSociete() {
+      try {
+        const res = await fetch(`${API_URL}/societes`);
+        if (!res.ok) throw new Error("Impossible de charger la société");
+        const societes = await res.json();
+        if (Array.isArray(societes) && societes.length > 0) {
+          setSocieteId(societes[0].id);
+        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Erreur inconnue");
+      }
+    }
+    loadSociete();
+  }, [router]);
+
+  useEffect(() => {
+    if (!societeId) return;
     async function load() {
-      if (!societeId) return;
       try {
         setLoading(true);
         setError(null);
@@ -105,14 +112,6 @@ export default function ExpertSocieteDashboardPage() {
         if (!res.ok) throw new Error("Impossible de charger le tableau de bord");
         const dash = await res.json();
         setData(dash);
-
-        const resGraph = await fetch(
-          `${API_URL}/societes/${societeId}/dashboard/graphique?months=12`
-        );
-        if (resGraph.ok) {
-          const graph = await resGraph.json();
-          setGraphData(graph);
-        }
 
         const resAlertes = await fetch(
           `${API_URL}/societes/${societeId}/dashboard/alertes?joursRetard=30`
@@ -130,7 +129,6 @@ export default function ExpertSocieteDashboardPage() {
     load();
   }, [societeId, fromDate, toDate]);
 
-  // Timeline: 12 derniers mois pour le curseur
   const timelineMonths = Array.from({ length: 12 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
     return {
@@ -141,7 +139,6 @@ export default function ExpertSocieteDashboardPage() {
   const selectedIndex = timelineMonths.findIndex(
     (m) => m.key === `${selectedYear}-${selectedMonth}`
   );
-  const rangeStart = 0;
   const rangeEnd = selectedIndex < 0 ? 11 : selectedIndex;
 
   const caN = data?.totalRecettes ?? 0;
@@ -162,59 +159,30 @@ export default function ExpertSocieteDashboardPage() {
     { name: "N-1", value: caN1, fill: "#94a3b8" },
     { name: "N", value: caN, fill: TEAL },
   ];
-
+  const barDataResultat = [
+    { name: "N-1", value: resultatN1, fill: resultatN1 >= 0 ? "#94a3b8" : "#f87171" },
+    { name: "N", value: resultatN, fill: resultatN >= 0 ? TEAL : "#dc2626" },
+  ];
   const barDataCharges = [
     { name: "N-1", value: chargesN1, fill: "#94a3b8" },
     { name: "N", value: chargesN, fill: TEAL },
   ];
 
-  const barDataResultat = [
-    { name: "N-1", value: resultatN1, fill: resultatN1 >= 0 ? "#94a3b8" : "#f87171" },
-    { name: "N", value: resultatN, fill: resultatN >= 0 ? TEAL : "#dc2626" },
-  ];
-
-  // Données pour le graphique radar "L'essentiel"
-  const radarData = [
-    { subject: "CA", A: Math.min(2, (caN / Math.max(caN1, 1))), fullMark: 2 },
-    { subject: "Résultat", A: Math.min(2, Math.max(0, (resultatN / Math.max(Math.abs(resultatN1), 1)))), fullMark: 2 },
-    { subject: "Trésorerie", A: Math.min(2, Math.max(0, ((data?.soldeTresorerie ?? 0) / 1e6))), fullMark: 2 },
-    { subject: "Clients", A: Math.min(2, Math.max(0, ((data?.totalSoldeClients ?? 0) / 1e5))), fullMark: 2 },
-    { subject: "Fournisseurs", A: Math.min(2, Math.max(0, (Math.abs(data?.totalSoldeFournisseurs ?? 0) / 1e5))), fullMark: 2 },
-    { subject: "Charges", A: Math.min(2, (chargesN / Math.max(chargesN1, 1))), fullMark: 2 },
-  ];
-
-  // Cartes de soldes avec navigation
-  const [currentSoldeIndex, setCurrentSoldeIndex] = useState(0);
-  const soldesCards = [
-    {
-      title: "Total solde clients",
-      value: data?.totalSoldeClients ?? 0,
-      banque: 0,
-      factures: data?.totalSoldeClients ?? 0,
-    },
-    {
-      title: "Total solde fournisseurs",
-      value: data?.totalSoldeFournisseurs ?? 0,
-      banque: 0,
-      factures: data?.totalSoldeFournisseurs ?? 0,
-    },
-    {
-      title: "Total solde notes de frais",
-      value: data?.totalSoldeNotesFrais ?? 0,
-      banque: 0,
-      factures: data?.totalSoldeNotesFrais ?? 0,
-    },
-  ];
-
   if (typeof window !== "undefined" && !localStorage.getItem("auth_token")) {
-    router.replace("/");
     return null;
+  }
+
+  if (!societeId && !loading && !error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f1f5f9]">
+        <p className="text-zinc-600">Aucune société trouvée.</p>
+      </div>
+    );
   }
 
   return (
     <div className="min-h-screen bg-[#f1f5f9] font-sans">
       <div className="mx-auto max-w-6xl px-4 py-6">
-        {/* En-tête : période + unité de temps */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl font-semibold text-zinc-900">
@@ -241,13 +209,11 @@ export default function ExpertSocieteDashboardPage() {
                   type="button"
                   onClick={() => setTimeUnit(unit)}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium capitalize ${
-                    timeUnit === unit
-                      ? "bg-orange-600 text-white"
-                      : "text-zinc-600 hover:bg-zinc-100"
+                    timeUnit === unit ? "text-white" : "text-zinc-600 hover:bg-zinc-100"
                   }`}
                   style={
                     timeUnit === unit
-                      ? { backgroundColor: ORANGE, color: "white" }
+                      ? { backgroundColor: ORANGE }
                       : {}
                   }
                 >
@@ -258,14 +224,12 @@ export default function ExpertSocieteDashboardPage() {
           </div>
         </header>
 
-        {/* Timeline : plage de dates */}
         <div className="mb-6 rounded-xl bg-white p-4 shadow-sm">
           <div className="relative flex h-3 w-full items-center rounded-full bg-zinc-200">
             <div
               className="absolute left-0 top-0 h-full rounded-full transition-all"
               style={{
-                width: `${((rangeEnd - rangeStart + 1) / timelineMonths.length) * 100}%`,
-                left: `${(rangeStart / timelineMonths.length) * 100}%`,
+                width: `${((rangeEnd + 1) / timelineMonths.length) * 100}%`,
                 backgroundColor: ORANGE,
               }}
             />
@@ -281,8 +245,7 @@ export default function ExpertSocieteDashboardPage() {
                 style={{
                   left: `${((i + 0.5) / timelineMonths.length) * 100}%`,
                   transform: "translate(-50%, -50%)",
-                  backgroundColor:
-                    i >= rangeStart && i <= rangeEnd ? ORANGE : "#94a3b8",
+                  backgroundColor: i <= rangeEnd ? ORANGE : "#94a3b8",
                 }}
                 title={m.label}
               />
@@ -294,12 +257,8 @@ export default function ExpertSocieteDashboardPage() {
           </div>
         </div>
 
-        {loading && (
-          <p className="text-sm text-zinc-500">Chargement...</p>
-        )}
-        {error && (
-          <p className="text-sm text-red-600">{error}</p>
-        )}
+        {loading && <p className="text-sm text-zinc-500">Chargement...</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
 
         {data && !loading && (
           <>
@@ -315,7 +274,10 @@ export default function ExpertSocieteDashboardPage() {
               <div className="flex flex-1 min-h-0 gap-4">
                 <div className="flex-1 min-h-[160px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={[{ name: "N", value: Math.max(0, Math.abs(data.soldeTresorerie ?? 0)) }]} margin={{ top: 5, right: 5, left: 5, bottom: 20 }}>
+                    <BarChart
+                      data={[{ name: "N", value: Math.max(0, Math.abs(data.soldeTresorerie ?? 0)) }]}
+                      margin={{ top: 5, right: 5, left: 5, bottom: 20 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
@@ -493,7 +455,9 @@ export default function ExpertSocieteDashboardPage() {
               <div className="flex flex-1 items-center justify-center">
                 <button
                   type="button"
-                  onClick={() => alert("Fonctionnalité à venir : Ajout d'indicateur personnalisé")}
+                  onClick={() => {
+                    alert("Fonctionnalité à venir : Ajout d'indicateur personnalisé");
+                  }}
                   className="flex h-16 w-16 items-center justify-center rounded-full bg-amber-400 text-white shadow-lg transition hover:bg-amber-500 hover:scale-110"
                   aria-label="Ajouter un indicateur"
                 >
@@ -505,7 +469,6 @@ export default function ExpertSocieteDashboardPage() {
           </>
         )}
 
-        {/* Alertes factures impayées */}
         {facturesImpayees.length > 0 && (
           <section className="mt-6 rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
             <div className="mb-3 flex items-center justify-between">
@@ -514,9 +477,7 @@ export default function ExpertSocieteDashboardPage() {
               </h2>
               <button
                 type="button"
-                onClick={() =>
-                  router.push(`/expert/societes/${societeId}/factures`)
-                }
+                onClick={() => router.push("/factures")}
                 className="text-sm font-medium text-orange-700 hover:text-orange-900"
               >
                 Voir toutes →

@@ -129,11 +129,34 @@ export class TresorerieService {
     const whereRecette: any = { ...whereBase };
     const whereDepense: any = { ...whereBase };
     if (from || to) {
-      whereRecette.date = dateFilter;
-      whereDepense.date = dateFilter;
+      whereRecette.date = { ...dateFilter };
+      whereDepense.date = { ...dateFilter };
     }
 
-    const [sumRecettes, sumDepenses] = await Promise.all([
+    // Période N-1 (même période, année précédente) pour comparaison
+    let totalRecettesN1 = 0;
+    let totalDepensesN1 = 0;
+    if (from && to) {
+      const fromDate = new Date(from);
+      const toDate = new Date(to);
+      const fromN1 = new Date(fromDate.getFullYear() - 1, fromDate.getMonth(), fromDate.getDate());
+      const toN1 = new Date(toDate.getFullYear() - 1, toDate.getMonth(), toDate.getDate());
+      toN1.setHours(23, 59, 59, 999);
+      const [sumR1, sumD1] = await Promise.all([
+        this.prisma.recette.aggregate({
+          where: { societeId, date: { gte: fromN1, lte: toN1 } },
+          _sum: { montant: true },
+        }),
+        this.prisma.depense.aggregate({
+          where: { societeId, date: { gte: fromN1, lte: toN1 } },
+          _sum: { montant: true },
+        }),
+      ]);
+      totalRecettesN1 = Number(sumR1._sum.montant ?? 0);
+      totalDepensesN1 = Number(sumD1._sum.montant ?? 0);
+    }
+
+    const [sumRecettes, sumDepenses, comptesBancaires, factures] = await Promise.all([
       this.prisma.recette.aggregate({
         where: whereRecette,
         _sum: { montant: true },
@@ -142,16 +165,91 @@ export class TresorerieService {
         where: whereDepense,
         _sum: { montant: true },
       }),
+      this.prisma.compteBancaire.findMany({
+        where: { societeId },
+        include: { transactions: true },
+      }),
+      this.prisma.facture.findMany({
+        where: {
+          societeId,
+          statut: { in: ['ENVOYEE', 'BROUILLON'] },
+        },
+        include: { paiements: true },
+      }),
     ]);
 
     const totalRecettes = Number(sumRecettes._sum.montant ?? 0);
     const totalDepenses = Number(sumDepenses._sum.montant ?? 0);
     const resultat = totalRecettes - totalDepenses;
+    const resultatN1 = totalRecettesN1 - totalDepensesN1;
+
+    // Solde trésorerie = somme des soldes de tous les comptes bancaires
+    let soldeTresorerie = 0;
+    for (const compte of comptesBancaires) {
+      const credits = compte.transactions
+        .filter((t) => t.type === 'CREDIT')
+        .reduce((s, t) => s + Number(t.montant), 0);
+      const debits = compte.transactions
+        .filter((t) => t.type === 'DEBIT')
+        .reduce((s, t) => s + Number(t.montant), 0);
+      soldeTresorerie += Number(compte.soldeInitial ?? 0) + credits - debits;
+    }
+
+    // Total solde clients = somme des restes à payer (factures non payées)
+    const totalSoldeClients = factures.reduce((sum, f) => {
+      const totalPaye = f.paiements.reduce((s, p) => s + Number(p.montant), 0);
+      return sum + (Number(f.totalTTC) - totalPaye);
+    }, 0);
+
+    // Solde fournisseurs (compte 401) - somme des écritures crédit - débit
+    const compteFournisseurs = await this.prisma.compteComptable.findFirst({
+      where: { code: '401' },
+    });
+    let totalSoldeFournisseurs = 0;
+    if (compteFournisseursFinal) {
+      const ecritures401 = await this.prisma.ecritureComptable.findMany({
+        where: {
+          societeId,
+          OR: [
+            { compteDebitId: compteFournisseursFinal.id },
+            { compteCreditId: compteFournisseursFinal.id },
+          ],
+        },
+      });
+      let totalCredit = 0;
+      let totalDebit = 0;
+      for (const e of ecritures401) {
+        if (e.compteCreditId === compteFournisseursFinal.id) {
+          totalCredit += Number(e.montant);
+        }
+        if (e.compteDebitId === compteFournisseursFinal.id) {
+          totalDebit += Number(e.montant);
+        }
+      }
+      // Pour un compte passif (401/40), solde = crédit - débit
+      totalSoldeFournisseurs = totalCredit - totalDebit;
+    }
+
+    // Solde notes de frais (somme des notes non validées ou en attente)
+    const notesFrais = await this.prisma.noteFrais.findMany({
+      where: {
+        societeId,
+        statut: { in: ['BROUILLON', 'EN_ATTENTE'] },
+      },
+    });
+    const totalSoldeNotesFrais = notesFrais.reduce((sum, n) => sum + Number(n.montant), 0);
 
     return {
       totalRecettes,
       totalDepenses,
       resultat,
+      totalRecettesN1,
+      totalDepensesN1,
+      resultatN1,
+      soldeTresorerie,
+      totalSoldeClients,
+      totalSoldeFournisseurs,
+      totalSoldeNotesFrais,
       from: from ?? null,
       to: to ?? null,
     };
