@@ -1,0 +1,378 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  PME
+  EXPERT
+  ADMIN
+}
+
+model User {
+  id       String  @id @default(cuid())
+  email    String  @unique
+  password String
+  name     String
+  phone    String?
+  role     Role    @default(PME)
+
+  societesPossedees Societe[] @relation("OwnerSocietes")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Societe {
+  id                 String  @id @default(cuid())
+  nom                String
+  rccm               String?
+  compteContribuable String?
+  regimeTva          String?
+  adresse            String?
+  pays               String? @default("Côte d'Ivoire")
+
+  ownerId String
+  owner   User   @relation("OwnerSocietes", fields: [ownerId], references: [id])
+
+  clients             Client[]
+  factures            Facture[]
+  devis               Devis[]
+  recettes            Recette[]
+  depenses            Depense[]
+  notesFrais          NoteFrais[]
+  comptesBancaires    CompteBancaire[]
+  ecrituresComptables EcritureComptable[]
+  declarationsTVA     DeclarationTVA[]
+  exercices           Exercice[]
+  documents           Document[]
+  rapprochementsFacture RapprochementFacture[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Client {
+  id        String  @id @default(cuid())
+  societeId String
+  nom       String
+  adresse   String?
+  email     String?
+  telephone String?
+  numeroCc  String?
+
+  societe  Societe   @relation(fields: [societeId], references: [id])
+  factures Facture[]
+  devis    Devis[]
+}
+
+model Facture {
+  id        String   @id @default(cuid())
+  societeId String
+  clientId  String
+  numero    String   @unique
+  date      DateTime
+  statut    String   @default("BROUILLON") // BROUILLON, ENVOYEE, PAYEE, ANNULEE
+
+  totalHT  Decimal @default(0)
+  totalTVA Decimal @default(0)
+  totalTTC Decimal @default(0)
+
+  societe            Societe                @relation(fields: [societeId], references: [id])
+  client             Client                 @relation(fields: [clientId], references: [id])
+  lignes             FactureLigne[]
+  devis              Devis?                 @relation // Si créé depuis un devis
+  paiements          Paiement[]
+  rapprochementsFacture RapprochementFacture[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FactureLigne {
+  id           String  @id @default(cuid())
+  factureId    String
+  designation  String
+  quantite     Int
+  prixUnitaire Decimal
+  tauxTVA      Decimal @default(0)
+  montantHT    Decimal
+  montantTVA   Decimal
+  montantTTC   Decimal
+
+  facture Facture @relation(fields: [factureId], references: [id])
+}
+
+model Devis {
+  id           String    @id @default(cuid())
+  societeId    String
+  clientId     String
+  numero       String    @unique
+  date         DateTime
+  dateValidite DateTime? // Date limite de validité du devis
+  statut       String    @default("BROUILLON") // BROUILLON, ENVOYE, ACCEPTE, REFUSE, CONVERTI
+  factureId    String?   @unique // Si converti en facture, référence à la facture créée
+
+  totalHT  Decimal @default(0)
+  totalTVA Decimal @default(0)
+  totalTTC Decimal @default(0)
+
+  societe Societe      @relation(fields: [societeId], references: [id])
+  client  Client       @relation(fields: [clientId], references: [id])
+  facture Facture?     @relation(fields: [factureId], references: [id])
+  lignes  DevisLigne[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DevisLigne {
+  id           String  @id @default(cuid())
+  devisId      String
+  designation  String
+  quantite     Int
+  prixUnitaire Decimal
+  tauxTVA      Decimal @default(0)
+  montantHT    Decimal
+  montantTVA   Decimal
+  montantTTC   Decimal
+
+  devis Devis @relation(fields: [devisId], references: [id], onDelete: Cascade)
+}
+
+model Recette {
+  id          String   @id @default(cuid())
+  societeId   String
+  date        DateTime
+  montant     Decimal
+  description String?
+
+  societe             Societe              @relation(fields: [societeId], references: [id])
+  transactionBancaire TransactionBancaire? @relation("RecetteTransaction")
+}
+
+model Depense {
+  id          String   @id @default(cuid())
+  societeId   String
+  date        DateTime
+  montant     Decimal
+  description String?
+
+  societe             Societe              @relation(fields: [societeId], references: [id])
+  transactionBancaire TransactionBancaire? @relation("DepenseTransaction")
+}
+
+model NoteFrais {
+  id              String   @id @default(cuid())
+  societeId       String
+  date            DateTime
+  montant         Decimal
+  description     String?
+  categorie       String? // Ex: Transport, Repas, Hébergement, etc.
+  statut          String   @default("BROUILLON") // BROUILLON, EN_ATTENTE, VALIDEE, REFUSEE
+  justificatifUrl String? // URL du fichier justificatif (si upload)
+
+  societe Societe @relation(fields: [societeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CompteBancaire {
+  id           String  @id @default(cuid())
+  societeId    String
+  nom          String // Ex: "Compte principal", "Compte épargne"
+  banque       String? // Nom de la banque
+  numeroCompte String? // Numéro de compte
+  iban         String? // IBAN (optionnel)
+  devise       String  @default("FCFA") // FCFA, EUR, USD, etc.
+  soldeInitial Decimal @default(0) // Solde initial du compte
+  actif        Boolean @default(true) // Compte actif ou archivé
+
+  societe      Societe               @relation(fields: [societeId], references: [id])
+  transactions TransactionBancaire[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TransactionBancaire {
+  id               String   @id @default(cuid())
+  compteBancaireId String
+  date             DateTime
+  montant          Decimal
+  libelle          String // Description de la transaction
+  type             String // DEBIT, CREDIT
+  categorie        String? // Ex: Virement, Prélèvement, Chèque, Carte, etc.
+  reference        String? // Référence bancaire
+  rapproche        Boolean  @default(false) // Si la transaction est rapprochée
+  recetteId        String?  @unique // Lien vers recette si rapprochée
+  depenseId        String?  @unique // Lien vers dépense si rapprochée
+
+  compteBancaire      CompteBancaire         @relation(fields: [compteBancaireId], references: [id])
+  recette             Recette?               @relation("RecetteTransaction", fields: [recetteId], references: [id])
+  depense             Depense?               @relation("DepenseTransaction", fields: [depenseId], references: [id])
+  rapprochementsFacture RapprochementFacture[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CompteComptable {
+  id        String  @id @default(cuid())
+  code      String  @unique // Code du compte (ex: "411", "701")
+  libelle   String // Libellé du compte
+  classe    Int // Classe SYSCOHADA (1-9)
+  type      String // ACTIF, PASSIF, CHARGE, PRODUIT
+  collectif Boolean @default(false) // Si c'est un compte collectif
+  parentId  String? // Compte parent (pour hiérarchie)
+
+  parent          CompteComptable?    @relation("CompteHierarchy", fields: [parentId], references: [id])
+  enfants         CompteComptable[]   @relation("CompteHierarchy")
+  ecrituresDebit  EcritureComptable[] @relation("CompteDebit")
+  ecrituresCredit EcritureComptable[] @relation("CompteCredit")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Exercice {
+  id          String    @id @default(cuid())
+  societeId   String
+  annee       Int // Année de l'exercice (ex: 2024)
+  dateDebut   DateTime // Date de début de l'exercice
+  dateFin     DateTime // Date de fin de l'exercice
+  statut      String    @default("OUVERT") // OUVERT, FERME
+  dateCloture DateTime? // Date de clôture de l'exercice
+
+  societe   Societe             @relation(fields: [societeId], references: [id])
+  ecritures EcritureComptable[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([societeId, annee])
+  @@index([societeId, statut])
+}
+
+model EcritureComptable {
+  id                 String   @id @default(cuid())
+  societeId          String
+  exerciceId         String? // Exercice auquel appartient l'écriture
+  compteDebitId      String
+  compteCreditId     String
+  date               DateTime
+  montant            Decimal
+  libelle            String
+  pieceJustificative String? // Référence (facture, transaction, etc.)
+  journal            String? // Journal comptable (Ventes, Achats, Banque, etc.)
+
+  societe      Societe         @relation(fields: [societeId], references: [id])
+  exercice     Exercice?       @relation(fields: [exerciceId], references: [id])
+  compteDebit  CompteComptable @relation("CompteDebit", fields: [compteDebitId], references: [id])
+  compteCredit CompteComptable @relation("CompteCredit", fields: [compteCreditId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DeclarationTVA {
+  id              String   @id @default(cuid())
+  societeId       String
+  periode         String // Format: "YYYY-MM" (ex: "2024-01")
+  dateDeclaration DateTime @default(now())
+  statut          String   @default("BROUILLON") // BROUILLON, ENVOYEE, VALIDEE
+
+  // TVA collectée (sur les ventes)
+  tvaCollectee Decimal @default(0)
+
+  // TVA déductible (sur les achats)
+  tvaDeductible Decimal @default(0)
+
+  // TVA à payer
+  tvaAPayer Decimal @default(0)
+
+  // Détails
+  montantHTVentes  Decimal @default(0)
+  montantTTCVentes Decimal @default(0)
+  montantHTAchats  Decimal @default(0)
+  montantTTCAchats Decimal @default(0)
+
+  societe Societe @relation(fields: [societeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Paiement {
+  id        String   @id @default(cuid())
+  factureId String
+  date      DateTime
+  montant   Decimal
+  methode   String // ESPECES, VIREMENT, CHEQUE, CARTE, AUTRE
+  reference String? // Numéro de chèque, référence virement, etc.
+  notes     String? // Commentaires optionnels
+
+  facture              Facture              @relation(fields: [factureId], references: [id])
+  rapprochementsFacture RapprochementFacture[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RapprochementFacture {
+  id               String   @id @default(cuid())
+  societeId        String
+  factureId        String
+  paiementId       String?
+  transactionBancaireId String? // Transaction bancaire liée
+  montant          Decimal
+  dateRapprochement DateTime @default(now())
+  statut           String   @default("PENDING") // PENDING, VALIDATED, REJECTED
+  scoreConfiance   Decimal? // Score de confiance du matching automatique (0-100)
+  notes            String?  // Commentaires sur le rapprochement
+
+  societe            Societe             @relation(fields: [societeId], references: [id])
+  facture            Facture             @relation(fields: [factureId], references: [id])
+  paiement           Paiement?           @relation(fields: [paiementId], references: [id])
+  transactionBancaire TransactionBancaire? @relation(fields: [transactionBancaireId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId, statut])
+  @@index([factureId])
+  @@index([transactionBancaireId])
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  societeId    String
+  nom          String // Nom du fichier original
+  type         String // FACTURE_FOURNISSEUR, JUSTIFICATIF, CONTRAT, AUTRE
+  categorie    String? // Catégorisation manuelle (ex: "Achats", "Ventes", "Administratif")
+  statut       String   @default("UPLOADED") // UPLOADED, VALIDATED, ARCHIVED
+  cheminFichier String // Chemin du fichier sur le serveur
+  dateUpload   DateTime @default(now())
+  description  String? // Description optionnelle
+  tailleFichier Int? // Taille en bytes
+  mimeType     String? // Type MIME du fichier (ex: "application/pdf", "image/jpeg")
+
+  societe Societe @relation(fields: [societeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId, statut])
+  @@index([societeId, type])
+}

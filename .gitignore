@@ -1,0 +1,76 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Uploads (fichiers uploadés par les utilisateurs)
+backend/uploads/
+frontend/public/uploads/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Prisma migrations (optionnel - décommenter si vous ne voulez pas les migrations)
+# backend/prisma/migrations/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Misc
+*.pem
+*.key
+
+# Exclure les fichiers système Windows et dossiers utilisateur
+AppData/
+Documents/
+Desktop/
+.cursor/
+.aws/
+*.lock
+
+# Exclure les fichiers système et dossiers utilisateur
+.cursor/
+.aws/
+AppData/
+Documents/
+Desktop/
