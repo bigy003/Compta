@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
+const TEAL = "#14b8a6";
+
 interface Client {
   id: string;
   nom: string;
@@ -25,47 +27,35 @@ export default function ClientsPage() {
   const [adresse, setAdresse] = useState("");
   const [telephone, setTelephone] = useState("");
 
-  // Édition
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNom, setEditNom] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editAdresse, setEditAdresse] = useState("");
   const [editTelephone, setEditTelephone] = useState("");
 
-  // Recherche
   const [searchTerm, setSearchTerm] = useState("");
-
   const [societeId, setSocieteId] = useState<string | null>(null);
+
+  const [showForm, setShowForm] = useState(false);
 
   async function loadClients() {
     try {
       setLoading(true);
       setError(null);
-
-      // 1. Récupérer les sociétés
       const resSoc = await fetch(`${API_URL}/societes`);
-      if (!resSoc.ok) {
-        throw new Error("Impossible de charger les sociétés");
-      }
+      if (!resSoc.ok) throw new Error("Impossible de charger les sociétés");
       const societes = await resSoc.json();
       if (!Array.isArray(societes) || societes.length === 0) {
         throw new Error("Aucune société trouvée pour cet utilisateur");
       }
-
       const firstId = societes[0].id as string;
       setSocieteId(firstId);
-
-      // 2. Charger les clients de cette société
-      const resClients = await fetch(
-        `${API_URL}/societes/${firstId}/clients`,
-      );
-      if (!resClients.ok) {
-        throw new Error("Impossible de charger les clients");
-      }
+      const resClients = await fetch(`${API_URL}/societes/${firstId}/clients`);
+      if (!resClients.ok) throw new Error("Impossible de charger les clients");
       const data = await resClients.json();
       setClients(data);
-    } catch (err: any) {
-      setError(err.message || "Erreur inconnue");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setLoading(false);
     }
@@ -73,41 +63,35 @@ export default function ClientsPage() {
 
   useEffect(() => {
     loadClients();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleCreateClient(e: React.FormEvent) {
     e.preventDefault();
     if (!societeId) return;
-
     try {
       setError(null);
-      const res = await fetch(
-        `${API_URL}/societes/${societeId}/clients`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            nom,
-            email: email || undefined,
-            adresse: adresse || undefined,
-            telephone: telephone || undefined,
-          }),
-        },
-      );
-
+      const res = await fetch(`${API_URL}/societes/${societeId}/clients`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nom,
+          email: email || undefined,
+          adresse: adresse || undefined,
+          telephone: telephone || undefined,
+        }),
+      });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "Erreur lors de la création");
       }
-
       setNom("");
       setEmail("");
       setAdresse("");
       setTelephone("");
+      setShowForm(false);
       await loadClients();
-    } catch (err: any) {
-      setError(err.message || "Erreur inconnue");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
     }
   }
 
@@ -121,15 +105,10 @@ export default function ClientsPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setEditNom("");
-    setEditEmail("");
-    setEditAdresse("");
-    setEditTelephone("");
   }
 
   async function handleUpdateClient(id: string) {
     if (!societeId) return;
-
     try {
       setError(null);
       const res = await fetch(
@@ -145,276 +124,368 @@ export default function ClientsPage() {
           }),
         },
       );
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "Erreur lors de la modification");
       }
-
       cancelEdit();
       await loadClients();
-    } catch (err: any) {
-      setError(err.message || "Erreur inconnue");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
     }
   }
 
   async function handleDeleteClient(id: string) {
     if (!societeId) return;
     if (!confirm("Êtes-vous sûr de vouloir supprimer ce client ?")) return;
-
     try {
       setError(null);
       const res = await fetch(
         `${API_URL}/societes/${societeId}/clients/${id}`,
-        {
-          method: "DELETE",
-        },
+        { method: "DELETE" },
       );
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.message || "Erreur lors de la suppression");
       }
-
       await loadClients();
-    } catch (err: any) {
-      setError(err.message || "Erreur inconnue");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
     }
   }
 
+  const filteredClients = clients.filter((client) => {
+    if (!searchTerm) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      client.nom.toLowerCase().includes(term) ||
+      client.email?.toLowerCase().includes(term) ||
+      client.adresse?.toLowerCase().includes(term) ||
+      client.telephone?.toLowerCase().includes(term)
+    );
+  });
+
   return (
-    <div className="flex min-h-screen justify-center bg-zinc-50 px-4 py-10 font-sans">
-      <main className="w-full max-w-4xl space-y-6">
-        <header>
-          <h1 className="text-2xl font-semibold text-zinc-900">
-            Clients
-          </h1>
-          <p className="text-sm text-zinc-500">
-            Gérez la liste de vos clients (PME).
-          </p>
+    <div className="min-h-screen bg-zinc-50 px-4 py-6 sm:px-6 lg:px-8">
+      <main className="mx-auto max-w-5xl space-y-6">
+        {/* En-tête */}
+        <header className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-xl font-bold text-zinc-900 sm:text-2xl">
+              Clients
+            </h1>
+            <p className="mt-0.5 text-sm text-zinc-500">
+              Gérez vos clients pour la facturation et les devis.
+            </p>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 sm:mt-0">
+            <button
+              type="button"
+              onClick={() => router.push("/factures")}
+              className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm transition hover:bg-zinc-50"
+            >
+              Voir factures
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/dashboard")}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+              style={{ backgroundColor: TEAL }}
+            >
+              Dashboard
+            </button>
+          </div>
         </header>
 
-        {/* Résumé rapide */}
-        {!loading && clients.length > 0 && (
-          <section className="rounded-xl bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase text-zinc-500">
-                  Total clients
-                </p>
-                <p className="mt-1 text-2xl font-semibold text-zinc-900">
-                  {clients.length}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => router.push("/factures")}
-                  className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                >
-                  Voir factures
-                </button>
-                <button
-                  onClick={() => router.push("/dashboard")}
-                  className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                >
-                  Dashboard
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <section className="rounded-xl bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-medium text-zinc-800">
-            Nouveau client
-          </h2>
-          <form
-            onSubmit={handleCreateClient}
-            className="space-y-3"
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <input
-                type="text"
-                placeholder="Nom du client *"
-                value={nom}
-                onChange={(e) => setNom(e.target.value)}
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-                required
-              />
-              <input
-                type="email"
-                placeholder="Email (optionnel)"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-              />
-              <input
-                type="text"
-                placeholder="Adresse (optionnel)"
-                value={adresse}
-                onChange={(e) => setAdresse(e.target.value)}
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-              />
-              <input
-                type="tel"
-                placeholder="Téléphone (optionnel)"
-                value={telephone}
-                onChange={(e) => setTelephone(e.target.value)}
-                className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-              />
+        {/* Carte récap + formulaire repliable */}
+        <section className="rounded-xl bg-white p-5 shadow-md">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-baseline gap-3">
+              <span className="text-2xl font-bold text-zinc-900">
+                {clients.length}
+              </span>
+              <span className="text-sm text-zinc-500">client{clients.length !== 1 ? "s" : ""}</span>
             </div>
             <button
-              type="submit"
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-              disabled={!societeId}
+              type="button"
+              onClick={() => setShowForm((v) => !v)}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90"
+              style={{ backgroundColor: TEAL }}
             >
-              Ajouter
+              {showForm ? "Masquer le formulaire" : "Nouveau client"}
             </button>
-          </form>
-        </section>
-
-        {loading && (
-          <p className="text-sm text-zinc-500">Chargement...</p>
-        )}
-        {error && (
-          <p className="text-sm text-red-600">{error}</p>
-        )}
-
-        <section className="rounded-xl bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-medium text-zinc-800">
-              Liste des clients
-            </h2>
-            <input
-              type="text"
-              placeholder="Rechercher un client..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="rounded-lg border border-zinc-200 px-3 py-1.5 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-            />
           </div>
-          {clients.length === 0 ? (
-            <p className="text-sm text-zinc-500">
-              Aucun client pour le moment.
-            </p>
-          ) : (
-            <ul className="divide-y divide-zinc-100">
-              {clients
-                .filter((client) => {
-                  if (!searchTerm) return true;
-                  const term = searchTerm.toLowerCase();
-                  return (
-                    client.nom.toLowerCase().includes(term) ||
-                    client.email?.toLowerCase().includes(term) ||
-                    client.adresse?.toLowerCase().includes(term) ||
-                    client.telephone?.toLowerCase().includes(term)
-                  );
-                })
-                .map((client) => (
-                <li key={client.id} className="py-3">
-                  {editingId === client.id ? (
-                    <div className="space-y-3">
-                      <div className="grid gap-3 md:grid-cols-2">
-                        <input
-                          type="text"
-                          value={editNom}
-                          onChange={(e) => setEditNom(e.target.value)}
-                          className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-                          required
-                        />
-                        <input
-                          type="email"
-                          value={editEmail}
-                          onChange={(e) => setEditEmail(e.target.value)}
-                          className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-                        />
-                        <input
-                          type="text"
-                          value={editAdresse}
-                          onChange={(e) => setEditAdresse(e.target.value)}
-                          className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-                        />
-                        <input
-                          type="tel"
-                          value={editTelephone}
-                          onChange={(e) => setEditTelephone(e.target.value)}
-                          className="rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleUpdateClient(client.id)}
-                          className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800"
-                        >
-                          Enregistrer
-                        </button>
-                        <button
-                          onClick={cancelEdit}
-                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                        >
-                          Annuler
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-zinc-900">
-                          {client.nom}
-                        </p>
-                        {client.email && (
-                          <p className="text-xs text-zinc-500">
-                            {client.email}
-                          </p>
-                        )}
-                        {client.adresse && (
-                          <p className="text-xs text-zinc-500">
-                            {client.adresse}
-                          </p>
-                        )}
-                        {client.telephone && (
-                          <p className="text-xs text-zinc-500">
-                            Tél: {client.telephone}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => startEdit(client)}
-                          className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-                        >
-                          Modifier
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClient(client.id)}
-                          className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                        >
-                          Supprimer
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              ))}
-              {clients.filter((client) => {
-                if (!searchTerm) return true;
-                const term = searchTerm.toLowerCase();
-                return (
-                  client.nom.toLowerCase().includes(term) ||
-                  client.email?.toLowerCase().includes(term) ||
-                  client.adresse?.toLowerCase().includes(term) ||
-                  client.telephone?.toLowerCase().includes(term)
-                );
-              }).length === 0 && searchTerm && (
-                <li className="py-4 text-center text-sm text-zinc-500">
-                  Aucun client trouvé pour "{searchTerm}"
-                </li>
-              )}
-            </ul>
+
+          {showForm && (
+            <form
+              onSubmit={handleCreateClient}
+              className="border-t border-zinc-100 pt-4"
+            >
+              <h2 className="mb-3 text-sm font-semibold text-zinc-800">
+                Ajouter un client
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Nom *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nom ou raison sociale"
+                    value={nom}
+                    onChange={(e) => setNom(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none transition focus:border-[#14b8a6] focus:ring-1 focus:ring-[#14b8a6]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="email@exemple.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none transition focus:border-[#14b8a6] focus:ring-1 focus:ring-[#14b8a6]"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Adresse
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Adresse postale"
+                    value={adresse}
+                    onChange={(e) => setAdresse(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none transition focus:border-[#14b8a6] focus:ring-1 focus:ring-[#14b8a6]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600">
+                    Téléphone
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="07 00 00 00 00"
+                    value={telephone}
+                    onChange={(e) => setTelephone(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none transition focus:border-[#14b8a6] focus:ring-1 focus:ring-[#14b8a6]"
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="submit"
+                  disabled={!societeId}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:opacity-90 disabled:opacity-50"
+                  style={{ backgroundColor: TEAL }}
+                >
+                  Enregistrer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                >
+                  Annuler
+                </button>
+              </div>
+            </form>
           )}
         </section>
+
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="rounded-xl bg-white p-8 text-center text-sm text-zinc-500 shadow-md">
+            Chargement des clients…
+          </div>
+        ) : (
+          <section className="rounded-xl bg-white shadow-md">
+            <div className="border-b border-zinc-100 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h2 className="text-base font-bold text-zinc-900">
+                  Liste des clients
+                </h2>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Rechercher (nom, email, tél…)"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full rounded-lg border border-zinc-200 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-[#14b8a6] focus:ring-1 focus:ring-[#14b8a6] sm:w-64"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {filteredClients.length === 0 ? (
+              <div className="p-8 text-center text-sm text-zinc-500">
+                {searchTerm
+                  ? `Aucun client trouvé pour « ${searchTerm} ».`
+                  : "Aucun client pour le moment. Cliquez sur « Nouveau client » pour en ajouter."}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[500px]">
+                  <thead>
+                    <tr className="border-b border-zinc-100 bg-zinc-50/80 text-left text-xs font-medium uppercase tracking-wider text-zinc-600">
+                      <th className="px-4 py-3">Client</th>
+                      <th className="hidden px-4 py-3 md:table-cell">Contact</th>
+                      <th className="hidden px-4 py-3 lg:table-cell">Adresse</th>
+                      <th className="w-28 px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {filteredClients.map((client) => (
+                      <tr
+                        key={client.id}
+                        className="transition hover:bg-zinc-50/50"
+                      >
+                        <td className="px-4 py-3">
+                          {editingId === client.id ? (
+                            <div className="space-y-2">
+                              <input
+                                type="text"
+                                value={editNom}
+                                onChange={(e) => setEditNom(e.target.value)}
+                                className="w-full max-w-[200px] rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none focus:ring-1 focus:ring-[#14b8a6]"
+                              />
+                              <div className="flex flex-col gap-1 md:hidden">
+                                <input
+                                  type="email"
+                                  value={editEmail}
+                                  onChange={(e) => setEditEmail(e.target.value)}
+                                  placeholder="Email"
+                                  className="rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                                />
+                                <input
+                                  type="tel"
+                                  value={editTelephone}
+                                  onChange={(e) => setEditTelephone(e.target.value)}
+                                  placeholder="Tél"
+                                  className="rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                                />
+                                <input
+                                  type="text"
+                                  value={editAdresse}
+                                  onChange={(e) => setEditAdresse(e.target.value)}
+                                  placeholder="Adresse"
+                                  className="rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="font-medium text-zinc-900">
+                              {client.nom}
+                            </span>
+                          )}
+                        </td>
+                        <td className="hidden px-4 py-3 md:table-cell">
+                          {editingId === client.id ? (
+                            <div className="space-y-1">
+                              <input
+                                type="email"
+                                value={editEmail}
+                                onChange={(e) => setEditEmail(e.target.value)}
+                                placeholder="Email"
+                                className="w-full max-w-[180px] rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                              />
+                              <input
+                                type="tel"
+                                value={editTelephone}
+                                onChange={(e) => setEditTelephone(e.target.value)}
+                                placeholder="Tél"
+                                className="w-full max-w-[140px] rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-0.5 text-sm text-zinc-600">
+                              {client.email && (
+                                <span className="truncate">{client.email}</span>
+                              )}
+                              {client.telephone && (
+                                <span>Tél. {client.telephone}</span>
+                              )}
+                              {!client.email && !client.telephone && (
+                                <span className="text-zinc-400">—</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="hidden px-4 py-3 lg:table-cell">
+                          {editingId === client.id ? (
+                            <input
+                              type="text"
+                              value={editAdresse}
+                              onChange={(e) => setEditAdresse(e.target.value)}
+                              placeholder="Adresse"
+                              className="w-full max-w-[220px] rounded border border-zinc-200 px-2 py-1 text-sm focus:border-[#14b8a6] focus:outline-none"
+                            />
+                          ) : (
+                            <span className="text-sm text-zinc-600 line-clamp-1">
+                              {client.adresse || "—"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {editingId === client.id ? (
+                            <div className="flex justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateClient(client.id)}
+                                className="rounded px-2 py-1 text-xs font-medium text-white hover:opacity-90"
+                                style={{ backgroundColor: TEAL }}
+                              >
+                                Enregistrer
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                className="rounded border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-50"
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => startEdit(client)}
+                                className="rounded px-2 py-1 text-xs font-medium text-zinc-600 hover:bg-zinc-100"
+                              >
+                                Modifier
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteClient(client.id)}
+                                className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                              >
+                                Supprimer
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </div>
   );
 }
-
