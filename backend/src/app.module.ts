@@ -18,6 +18,11 @@ import { PaiementsModule } from './paiements/paiements.module';
 import { ExercicesModule } from './exercices/exercices.module';
 import { DocumentsModule } from './documents/documents.module';
 import { RapprochementAvanceModule } from './rapprochement-avance/rapprochement-avance.module';
+import { AuditModule } from './audit/audit.module';
+import { BudgetModule } from './budget/budget.module';
+import { StockModule } from './stock/stock.module';
+import { ImmobilisationsModule } from './immobilisations/immobilisations.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -38,6 +43,11 @@ import { RapprochementAvanceModule } from './rapprochement-avance/rapprochement-
     ExercicesModule,
     DocumentsModule,
     RapprochementAvanceModule,
+    AuditModule,
+    BudgetModule,
+    StockModule,
+    ImmobilisationsModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { AuthGuard } from "./AuthGuard";
+import { ChatWidget } from "./ChatWidget";
 import { Sidebar } from "./Sidebar";
 
 export default function LayoutContent({ children }: { children: React.ReactNode }) {
@@ -14,6 +15,7 @@ export default function LayoutContent({ children }: { children: React.ReactNode 
       <main className={!isLoginPage ? "ml-64 min-h-screen" : ""}>
         {children}
       </main>
+      {!isLoginPage && <ChatWidget />}
     </AuthGuard>
   );
 }

@@ -74,33 +74,33 @@
 - ✅ **Upload de documents** : factures fournisseurs, justificatifs
 - ✅ **Classification** : catégorisation manuelle des documents
 - ✅ **Statuts** : uploaded, validated, archived
-- 🟡 **OCR basique** : extraction de texte (optionnel, nécessite API externe)
+- ✅ **OCR basique** : extraction de texte sur PDF (pdf-parse) et images (Tesseract.js, gratuit)
 
 ### 2. Rapprochement avancé
-- 🟡 **Rapprochement automatique** : matching intelligent transactions/documents
-- 🟡 **Rapprochement factures** : lier factures clients aux paiements
-- 🟡 **Validation workflow** : validation des rapprochements
+- ✅ **Rapprochement automatique** : matching intelligent (score montant/date/libellé), suggestions
+- ✅ **Rapprochement factures** : lier transactions bancaires aux factures clients (création rapprochement)
+- ✅ **Validation workflow** : valider / rejeter rapprochements (PENDING → VALIDATED / REJECTED)
 
 ### 3. Audit et contrôles
-- 🟡 **Contrôles automatiques** :
+- ✅ **Contrôles automatiques** :
   - Factures non payées
   - Rapprochements à valider
   - Documents manquants
   - Doublons détectés
-- 🟡 **Rapports d'audit** : génération de rapports Word/PDF
+- ✅ **Rapports d'audit** : génération de rapports PDF (téléchargement)
 
 ### 4. Stock et inventaire (si applicable)
-- 🟡 **Gestion de stock** : pour les PME qui vendent des produits
-- 🟡 **Inventaires** : comptages physiques
+- ✅ **Gestion de stock** : pour les PME qui vendent des produits (produits, mouvements entrée/sortie)
+- ✅ **Inventaires** : comptages physiques, lignes d'inventaire, clôture avec ajustement des stocks
 
 ### 5. Immobilisations
-- 🟡 **Suivi immobilisations** : enregistrement des biens
-- 🟡 **Amortissements** : calculs automatiques selon SYSCOHADA
+- ✅ **Suivi immobilisations** : enregistrement des biens (catégories, valeur, durée)
+- ✅ **Amortissements** : calculs automatiques selon SYSCOHADA (linéaire, prorata temporis)
 
 ### 6. Budget et prévisions
-- 🟡 **Budgets** : création de budgets annuels
-- 🟡 **Prévisions trésorerie** : projections financières
-- 🟡 **Comparaison réel/budget** : écarts
+- ✅ **Budgets** : création de budgets annuels (recettes/dépenses)
+- ✅ **Prévisions trésorerie** : courbe prévisionnelle (moyennes + factures à encaisser)
+- ✅ **Comparaison réel/budget** : écarts (tableau comparaison)
 
 ---
 
@@ -117,8 +117,8 @@
 - 🔴 **PA Orchestrator** : orchestration complexe
 
 ### 3. Chat et communication
-- 🔴 **Chat intégré** : communication sur documents
-- 🔴 **Messages intelligents** : suggestions automatiques
+- ✅ **Chat intégré** : assistant ComptaCI (widget, réponses par mots-clés, gratuit)
+- 🔴 **Messages intelligents** : suggestions automatiques (nécessite API IA payante)
 
 ### 4. WebSockets temps réel
 - 🔴 **Notifications temps réel** : mises à jour instantanées
@@ -148,17 +148,20 @@
 8. ✅ Déclaration TVA
 
 ### Phase 2 - Améliorations (2-3 mois)
-1. Upload documents
-2. Rapprochement avancé
-3. Contrôles d'audit
-4. Graphiques dashboard
-5. Budgets
+1. ✅ Upload documents
+2. 🟡 Rapprochement avancé (matching intelligent, workflow)
+3. ✅ Contrôles d'audit + rapports PDF
+4. ✅ Graphiques dashboard
+5. ✅ Budgets + comparaison réel/budget
+6. ✅ Stock et inventaire
+7. ✅ Immobilisations et amortissements
+8. ✅ Chatbot assistant
 
 ### Phase 3 - Avancé (selon besoins)
-1. OCR
+1. ✅ OCR basique (PDF + images, Tesseract.js gratuit)
 2. Intégrations bancaires
-3. Chat
-4. WebSockets
+3. WebSockets temps réel
+4. ✅ Prévisions trésorerie (courbe prévisionnelle)
 
 ---
 
@@ -173,3 +176,17 @@ Pour votre MVP, je recommande de commencer par :
 5. **Plan comptable SYSCOHADA** (conformité)
 
 Ces 5 fonctionnalités transformeront votre MVP en un vrai logiciel comptable professionnel.
+
+---
+
+## 📌 RESTE À FAIRE (état actuel)
+
+### Tout le prévu « priorité moyenne » est implémenté
+- ✅ Prévisions trésorerie (courbe + tableau)
+- ✅ Rapprochement avancé (suggestions, workflow valider/rejeter)
+
+### Optionnel / plus tard (implémenté)
+- ✅ **OCR basique** : extraction de texte sur documents PDF et images (JPEG/PNG) via pdf-parse + Tesseract.js (gratuit).
+
+### Priorité basse (non implémenté)
+- Intégrations externes (connecteurs bancaires, Google Drive, Stripe), facturation électronique avancée, WebSockets temps réel, analytics, administration avancée (API keys, facturation SaaS, grilles tarifaires).

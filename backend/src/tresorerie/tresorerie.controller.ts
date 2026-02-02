@@ -75,5 +75,16 @@ export class TresorerieController {
       joursRetard ? parseInt(joursRetard) : 30,
     );
   }
+
+  @Get('previsions-tresorerie')
+  previsionsTresorerie(
+    @Param('societeId') societeId: string,
+    @Query('nbMois') nbMois?: string,
+  ) {
+    return this.tresorerieService.getPrevisionsTresorerie(
+      societeId,
+      nbMois ? parseInt(nbMois) : 12,
+    );
+  }
 }
 

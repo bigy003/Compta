@@ -333,6 +333,147 @@ export class TresorerieService {
     return graphData;
   }
 
+  /**
+   * Prévisions de trésorerie : solde actuel + projection sur N mois (moyennes recettes/dépenses + factures à encaisser)
+   */
+  async getPrevisionsTresorerie(
+    societeId: string,
+    nbMois: number = 12,
+  ): Promise<{
+    soldeActuel: number;
+    facturesAEncaisserTotal: number;
+    previsions: Array<{
+      mois: string;
+      annee: number;
+      libelle: string;
+      recettesPrevu: number;
+      depensesPrevu: number;
+      facturesAEncaisser: number;
+      soldeCumule: number;
+    }>;
+  }> {
+    const now = new Date();
+    const startPast = new Date(now.getFullYear(), now.getMonth() - 12, 1);
+    const endPast = new Date(now.getFullYear(), now.getMonth(), 0);
+    endPast.setHours(23, 59, 59, 999);
+
+    // Solde actuel (comptes bancaires)
+    const comptesBancaires = await this.prisma.compteBancaire.findMany({
+      where: { societeId },
+      include: { transactions: true },
+    });
+    let soldeActuel = 0;
+    for (const compte of comptesBancaires) {
+      const credits = compte.transactions
+        .filter((t) => t.type === 'CREDIT')
+        .reduce((s, t) => s + Number(t.montant), 0);
+      const debits = compte.transactions
+        .filter((t) => t.type === 'DEBIT')
+        .reduce((s, t) => s + Number(t.montant), 0);
+      soldeActuel += Number(compte.soldeInitial ?? 0) + credits - debits;
+    }
+
+    // Moyennes mensuelles sur les 12 derniers mois
+    const [recettes, depenses, factures] = await Promise.all([
+      this.prisma.recette.findMany({
+        where: {
+          societeId,
+          date: { gte: startPast, lte: endPast },
+        },
+        select: { date: true, montant: true },
+      }),
+      this.prisma.depense.findMany({
+        where: {
+          societeId,
+          date: { gte: startPast, lte: endPast },
+        },
+        select: { date: true, montant: true },
+      }),
+      this.prisma.facture.findMany({
+        where: {
+          societeId,
+          statut: { in: ['ENVOYEE', 'BROUILLON'] },
+        },
+        include: { paiements: true },
+      }),
+    ]);
+
+    const recettesParMois: Record<string, number> = {};
+    const depensesParMois: Record<string, number> = {};
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(startPast);
+      d.setMonth(d.getMonth() + i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      recettesParMois[key] = 0;
+      depensesParMois[key] = 0;
+    }
+    recettes.forEach((r) => {
+      const key = `${new Date(r.date).getFullYear()}-${String(new Date(r.date).getMonth() + 1).padStart(2, '0')}`;
+      if (recettesParMois[key] !== undefined) recettesParMois[key] += Number(r.montant);
+    });
+    depenses.forEach((d) => {
+      const key = `${new Date(d.date).getFullYear()}-${String(new Date(d.date).getMonth() + 1).padStart(2, '0')}`;
+      if (depensesParMois[key] !== undefined) depensesParMois[key] += Number(d.montant);
+    });
+
+    const nbMoisAvecDonnees = Object.keys(recettesParMois).filter(
+      (k) => recettesParMois[k] > 0 || depensesParMois[k] > 0,
+    ).length || 1;
+    const moyRecettes =
+      Object.values(recettesParMois).reduce((a, b) => a + b, 0) / nbMoisAvecDonnees;
+    const moyDepenses =
+      Object.values(depensesParMois).reduce((a, b) => a + b, 0) / nbMoisAvecDonnees;
+
+    // Factures à encaisser (reste à payer)
+    let facturesAEncaisserTotal = 0;
+    for (const f of factures) {
+      const totalPaye = f.paiements.reduce((s, p) => s + Number(p.montant), 0);
+      const reste = Number(f.totalTTC) - totalPaye;
+      if (reste > 0) facturesAEncaisserTotal += reste;
+    }
+
+    // Mois en français
+    const moisNoms = ['Janv', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+    const previsions: Array<{
+      mois: string;
+      annee: number;
+      libelle: string;
+      recettesPrevu: number;
+      depensesPrevu: number;
+      facturesAEncaisser: number;
+      soldeCumule: number;
+    }> = [];
+    let soldeCumule = soldeActuel;
+
+    for (let i = 0; i < nbMois; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const annee = d.getFullYear();
+      const moisIndex = d.getMonth();
+      const moisKey = `${annee}-${String(moisIndex + 1).padStart(2, '0')}`;
+      const libelle = `${moisNoms[moisIndex]} ${annee}`;
+      const recettesPrevu = i === 0 ? moyRecettes + facturesAEncaisserTotal : moyRecettes;
+      const depensesPrevu = moyDepenses;
+      const facturesAEncaisser = i === 0 ? facturesAEncaisserTotal : 0;
+      soldeCumule += recettesPrevu - depensesPrevu;
+
+      previsions.push({
+        mois: moisKey,
+        annee,
+        libelle,
+        recettesPrevu: Math.round(recettesPrevu),
+        depensesPrevu: Math.round(depensesPrevu),
+        facturesAEncaisser,
+        soldeCumule: Math.round(soldeCumule),
+      });
+    }
+
+    return {
+      soldeActuel,
+      facturesAEncaisserTotal,
+      previsions,
+    };
+  }
+
   async getFacturesImpayees(societeId: string, joursRetard: number = 30) {
     const dateLimite = new Date();
     dateLimite.setDate(dateLimite.getDate() - joursRetard);

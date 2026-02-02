@@ -57,9 +57,117 @@ model Societe {
   exercices           Exercice[]
   documents           Document[]
   rapprochementsFacture RapprochementFacture[]
+  budgets             Budget[]
+  produits            Produit[]
+  mouvementsStock     MouvementStock[]
+  inventaires         Inventaire[]
+  immobilisations     Immobilisation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Budget {
+  id             String   @id @default(cuid())
+  societeId      String
+  annee          Int      // Année concernée (ex: 2026)
+  budgetRecettes Decimal  @default(0) // Budget recettes annuel (FCFA)
+  budgetDepenses Decimal  @default(0) // Budget dépenses annuel (FCFA)
+
+  societe Societe @relation(fields: [societeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([societeId, annee])
+  @@index([societeId])
+}
+
+model Produit {
+  id              String   @id @default(cuid())
+  societeId       String
+  reference       String   // Référence produit (ex: REF-001)
+  designation     String   // Désignation / libellé
+  unite           String   @default("PIECE") // PIECE, KG, LITRE, METRE, etc.
+  quantiteEnStock Decimal  @default(0)
+  seuilAlerte     Decimal? // Alerte si stock < seuil
+
+  societe         Societe          @relation(fields: [societeId], references: [id], onDelete: Cascade)
+  mouvementsStock MouvementStock[]
+  lignesInventaire LigneInventaire[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([societeId, reference])
+  @@index([societeId])
+}
+
+model MouvementStock {
+  id         String   @id @default(cuid())
+  societeId  String
+  produitId  String
+  type       String   // ENTREE, SORTIE
+  quantite   Decimal
+  date       DateTime
+  libelle    String?  // Référence facture, bon de livraison, etc.
+
+  societe Societe @relation(fields: [societeId], references: [id], onDelete: Cascade)
+  produit Produit @relation(fields: [produitId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([societeId])
+  @@index([produitId])
+}
+
+model Inventaire {
+  id           String   @id @default(cuid())
+  societeId    String
+  dateInventaire DateTime
+  statut       String   @default("BROUILLON") // BROUILLON, CLOTURE
+  commentaire  String?
+
+  societe          Societe          @relation(fields: [societeId], references: [id], onDelete: Cascade)
+  lignesInventaire LigneInventaire[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId])
+}
+
+model LigneInventaire {
+  id               String   @id @default(cuid())
+  inventaireId     String
+  produitId        String
+  quantiteComptee  Decimal  // Quantité comptée physiquement
+  quantiteSysteme  Decimal  // Quantité en stock au moment du comptage
+
+  inventaire Inventaire @relation(fields: [inventaireId], references: [id], onDelete: Cascade)
+  produit    Produit    @relation(fields: [produitId], references: [id], onDelete: Cascade)
+
+  @@unique([inventaireId, produitId])
+  @@index([inventaireId])
+}
+
+model Immobilisation {
+  id               String   @id @default(cuid())
+  societeId        String
+  designation      String   // Désignation du bien (ex: Véhicule Toyota)
+  categorie        String   // VEHICULE, MATERIEL_INFORMATIQUE, MOBILIER, BATIMENT, AUTRE
+  dateAcquisition  DateTime // Date d'acquisition
+  valeurOrigine    Decimal  // Valeur d'origine (FCFA)
+  dureeAnnees      Int      // Durée d'utilisation en années (SYSCOHADA)
+  methode          String   @default("LINEAIRE") // Méthode d'amortissement
+  commentaire      String?
+
+  societe Societe @relation(fields: [societeId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId])
 }
 
 model Client {
@@ -367,6 +475,7 @@ model Document {
   description  String? // Description optionnelle
   tailleFichier Int? // Taille en bytes
   mimeType     String? // Type MIME du fichier (ex: "application/pdf", "image/jpeg")
+  texteExtrait String? // Texte extrait par OCR / extraction PDF
 
   societe Societe @relation(fields: [societeId], references: [id])
 
