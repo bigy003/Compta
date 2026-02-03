@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import PDFDocument from 'pdfkit';
 import { PlanComptableService } from '../plan-comptable/plan-comptable.service';
 import { EmailService } from '../email/email.service';
+import { DevisesService } from '../devises/devises.service';
 
 interface FactureLigneInput {
   designation: string;
@@ -15,6 +16,7 @@ interface CreateFactureDto {
   clientId: string;
   date: string; // ISO string
   lignes: FactureLigneInput[];
+  deviseCode?: string; // XOF (par défaut), EUR, USD...
 }
 
 @Injectable()
@@ -24,6 +26,7 @@ export class FacturesService {
     @Inject(forwardRef(() => PlanComptableService))
     private readonly planComptableService: PlanComptableService,
     private readonly emailService: EmailService,
+    private readonly devisesService: DevisesService,
   ) {}
 
   listBySociete(societeId: string, from?: string, to?: string) {
@@ -93,6 +96,28 @@ export class FacturesService {
 
     const totalTTC = totalHT + totalTVA;
 
+    // Gestion multi-devises :
+    // - Les montants saisis sont dans la devise choisie
+    // - On stocke les montants comptables en XOF
+    // - On garde le montant d'origine et le taux pour information
+    const deviseCode = dto.deviseCode || 'XOF';
+
+    let totalHTFinal = totalHT;
+    let totalTVAFinal = totalTVA;
+    let totalTTCFinal = totalTTC;
+    let tauxChange: number | null = null;
+    let montantDeviseEtrangere: number | null = null;
+
+    if (deviseCode !== 'XOF') {
+      const taux = await this.devisesService.getOuCreerTauxChange(deviseCode);
+      tauxChange = taux;
+      montantDeviseEtrangere = totalTTC;
+
+      totalHTFinal = totalHT * taux;
+      totalTVAFinal = totalTVA * taux;
+      totalTTCFinal = totalTTC * taux;
+    }
+
     // numéro simple: FACT-aaaaMMjj-HHMMSS
     const now = new Date();
     const numero = `FACT-${now
@@ -106,9 +131,12 @@ export class FacturesService {
         clientId: dto.clientId,
         numero,
         date: new Date(dto.date),
-        totalHT,
-        totalTVA,
-        totalTTC,
+        totalHT: totalHTFinal,
+        totalTVA: totalTVAFinal,
+        totalTTC: totalTTCFinal,
+        deviseId: deviseCode !== 'XOF' ? deviseCode : null,
+        tauxChange: tauxChange ?? undefined,
+        montantDeviseEtrangere: montantDeviseEtrangere ?? undefined,
         lignes: {
           create: lignesData,
         },

@@ -9,7 +9,16 @@ const API_URL =
 const TEAL = "#14b8a6";
 
 interface ControleAudit {
-  type: 'FACTURE_NON_PAYEE' | 'RAPPROCHEMENT_A_VALIDER' | 'DOCUMENT_MANQUANT' | 'DOUBLON_DETECTE';
+  type: 
+    | 'FACTURE_NON_PAYEE' 
+    | 'RAPPROCHEMENT_A_VALIDER' 
+    | 'DOCUMENT_MANQUANT' 
+    | 'DOUBLON_DETECTE'
+    | 'ANOMALIE_MONTANT'
+    | 'DATE_SUSPECTE'
+    | 'INCOHERENCE_COMPTABILITE'
+    | 'COMPTE_ERRONE'
+    | 'ALERTE_TRESORERIE';
   severite: 'HAUTE' | 'MOYENNE' | 'BASSE';
   titre: string;
   description: string;
@@ -25,6 +34,11 @@ interface ResumeControles {
     RAPPROCHEMENT_A_VALIDER: number;
     DOCUMENT_MANQUANT: number;
     DOUBLON_DETECTE: number;
+    ANOMALIE_MONTANT: number;
+    DATE_SUSPECTE: number;
+    INCOHERENCE_COMPTABILITE: number;
+    COMPTE_ERRONE: number;
+    ALERTE_TRESORERIE: number;
   };
   parSeverite: {
     HAUTE: number;
@@ -38,6 +52,23 @@ const TYPE_LABELS: Record<string, string> = {
   RAPPROCHEMENT_A_VALIDER: "Rapprochements à valider",
   DOCUMENT_MANQUANT: "Documents manquants",
   DOUBLON_DETECTE: "Doublons détectés",
+  ANOMALIE_MONTANT: "Anomalies de montants",
+  DATE_SUSPECTE: "Dates suspectes",
+  INCOHERENCE_COMPTABILITE: "Incohérences comptables",
+  COMPTE_ERRONE: "Comptes erronés",
+  ALERTE_TRESORERIE: "Alertes trésorerie",
+};
+
+const TYPE_ICONS: Record<string, string> = {
+  FACTURE_NON_PAYEE: "📄",
+  RAPPROCHEMENT_A_VALIDER: "🔄",
+  DOCUMENT_MANQUANT: "📎",
+  DOUBLON_DETECTE: "🔁",
+  ANOMALIE_MONTANT: "⚠️",
+  DATE_SUSPECTE: "📅",
+  INCOHERENCE_COMPTABILITE: "❌",
+  COMPTE_ERRONE: "💳",
+  ALERTE_TRESORERIE: "💰",
 };
 
 const SEVERITE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -287,13 +318,14 @@ export default function AuditPage() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="flex-1 space-y-2">
                         <div className="flex items-center gap-2">
+                          <span className="text-lg">{TYPE_ICONS[controle.type] || "📋"}</span>
                           <span
                             className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${severiteStyle.border} ${severiteStyle.text}`}
                           >
                             {controle.severite}
                           </span>
                           <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-700">
-                            {TYPE_LABELS[controle.type]}
+                            {TYPE_LABELS[controle.type] || controle.type}
                           </span>
                         </div>
                         <h3 className="font-semibold text-zinc-900">

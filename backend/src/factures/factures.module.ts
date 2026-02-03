@@ -4,9 +4,15 @@ import { FacturesController } from './factures.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PlanComptableModule } from '../plan-comptable/plan-comptable.module';
 import { EmailModule } from '../email/email.module';
+import { DevisesModule } from '../devises/devises.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => PlanComptableModule), EmailModule],
+  imports: [
+    PrismaModule,
+    forwardRef(() => PlanComptableModule),
+    EmailModule,
+    DevisesModule,
+  ],
   controllers: [FacturesController],
   providers: [FacturesService],
   exports: [FacturesService],

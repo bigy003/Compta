@@ -3,7 +3,16 @@ import { PrismaService } from '../prisma/prisma.service';
 import PDFDocument from 'pdfkit';
 
 export interface ControleAudit {
-  type: 'FACTURE_NON_PAYEE' | 'RAPPROCHEMENT_A_VALIDER' | 'DOCUMENT_MANQUANT' | 'DOUBLON_DETECTE';
+  type: 
+    | 'FACTURE_NON_PAYEE' 
+    | 'RAPPROCHEMENT_A_VALIDER' 
+    | 'DOCUMENT_MANQUANT' 
+    | 'DOUBLON_DETECTE'
+    | 'ANOMALIE_MONTANT'
+    | 'DATE_SUSPECTE'
+    | 'INCOHERENCE_COMPTABILITE'
+    | 'COMPTE_ERRONE'
+    | 'ALERTE_TRESORERIE';
   severite: 'HAUTE' | 'MOYENNE' | 'BASSE';
   titre: string;
   description: string;
@@ -37,6 +46,26 @@ export class AuditService {
     // 4. Doublons détectés
     const doublons = await this.controleDoublons(societeId);
     controles.push(...doublons);
+
+    // 5. Anomalies de montants
+    const anomaliesMontants = await this.controleAnomaliesMontants(societeId);
+    controles.push(...anomaliesMontants);
+
+    // 6. Dates suspectes
+    const datesSuspectes = await this.controleDatesSuspectes(societeId);
+    controles.push(...datesSuspectes);
+
+    // 7. Incohérences comptables
+    const incoherences = await this.controleIncoherencesComptables(societeId);
+    controles.push(...incoherences);
+
+    // 8. Comptes erronés
+    const comptesErrones = await this.controleComptesErrones(societeId);
+    controles.push(...comptesErrones);
+
+    // 9. Alertes trésorerie
+    const alertesTresorerie = await this.controleAlertesTresorerie(societeId);
+    controles.push(...alertesTresorerie);
 
     // Trier par sévérité (HAUTE > MOYENNE > BASSE) puis par date
     return controles.sort((a, b) => {
@@ -336,6 +365,11 @@ export class AuditService {
         RAPPROCHEMENT_A_VALIDER: 0,
         DOCUMENT_MANQUANT: 0,
         DOUBLON_DETECTE: 0,
+        ANOMALIE_MONTANT: 0,
+        DATE_SUSPECTE: 0,
+        INCOHERENCE_COMPTABILITE: 0,
+        COMPTE_ERRONE: 0,
+        ALERTE_TRESORERIE: 0,
       },
       parSeverite: {
         HAUTE: 0,
@@ -345,7 +379,9 @@ export class AuditService {
     };
 
     for (const controle of controles) {
-      resume.parType[controle.type]++;
+      if (resume.parType[controle.type] !== undefined) {
+        resume.parType[controle.type]++;
+      }
       resume.parSeverite[controle.severite]++;
     }
 
@@ -399,7 +435,25 @@ export class AuditService {
       y += 18;
       doc.text(`Par sévérité - Haute : ${resume.parSeverite.HAUTE} | Moyenne : ${resume.parSeverite.MOYENNE} | Basse : ${resume.parSeverite.BASSE}`, margin, y);
       y += 18;
-      doc.text(`Par type - Factures non payées : ${resume.parType.FACTURE_NON_PAYEE} | Rapprochements à valider : ${resume.parType.RAPPROCHEMENT_A_VALIDER} | Documents manquants : ${resume.parType.DOCUMENT_MANQUANT} | Doublons : ${resume.parType.DOUBLON_DETECTE}`, margin, y);
+      doc.text(`Par type:`, margin, y);
+      y += 16;
+      doc.text(`- Factures non payées: ${resume.parType.FACTURE_NON_PAYEE}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Rapprochements à valider: ${resume.parType.RAPPROCHEMENT_A_VALIDER}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Documents manquants: ${resume.parType.DOCUMENT_MANQUANT}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Doublons: ${resume.parType.DOUBLON_DETECTE}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Anomalies montants: ${resume.parType.ANOMALIE_MONTANT}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Dates suspectes: ${resume.parType.DATE_SUSPECTE}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Incohérences comptables: ${resume.parType.INCOHERENCE_COMPTABILITE}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Comptes erronés: ${resume.parType.COMPTE_ERRONE}`, margin + 10, y);
+      y += 14;
+      doc.text(`- Alertes trésorerie: ${resume.parType.ALERTE_TRESORERIE}`, margin + 10, y);
       y += 28;
 
       // Liste des contrôles
@@ -411,6 +465,11 @@ export class AuditService {
         RAPPROCHEMENT_A_VALIDER: 'Rapprochement à valider',
         DOCUMENT_MANQUANT: 'Document manquant',
         DOUBLON_DETECTE: 'Doublon détecté',
+        ANOMALIE_MONTANT: 'Anomalie de montant',
+        DATE_SUSPECTE: 'Date suspecte',
+        INCOHERENCE_COMPTABILITE: 'Incohérence comptable',
+        COMPTE_ERRONE: 'Compte erroné',
+        ALERTE_TRESORERIE: 'Alerte trésorerie',
       };
 
       for (const c of controles) {
@@ -428,5 +487,405 @@ export class AuditService {
 
       doc.end();
     });
+  }
+
+  /**
+   * Contrôle 5: Anomalies de montants (montants inhabituels par rapport à l'historique)
+   */
+  private async controleAnomaliesMontants(
+    societeId: string,
+  ): Promise<ControleAudit[]> {
+    const controles: ControleAudit[] = [];
+    const maintenant = new Date();
+
+    // Analyser les factures : détecter celles avec des montants anormalement élevés
+    const factures = await this.prisma.facture.findMany({
+      where: { societeId },
+      orderBy: { date: 'desc' },
+      take: 100, // Dernières 100 factures
+    });
+
+    if (factures.length < 3) return controles; // Pas assez de données
+
+    // Calculer la moyenne et l'écart-type des montants
+    const montants = factures.map((f) => Number(f.totalTTC));
+    const moyenne = montants.reduce((a, b) => a + b, 0) / montants.length;
+    const variance = montants.reduce((sum, m) => sum + Math.pow(m - moyenne, 2), 0) / montants.length;
+    const ecartType = Math.sqrt(variance);
+    const seuilAnormal = moyenne + (3 * ecartType); // 3 écarts-types = anomalie
+
+    // Vérifier les factures récentes (30 derniers jours)
+    const dateLimite = new Date(maintenant.getTime() - 30 * 24 * 60 * 60 * 1000);
+    for (const facture of factures) {
+      if (facture.date >= dateLimite) {
+        const montant = Number(facture.totalTTC);
+        if (montant > seuilAnormal && montant > moyenne * 2) {
+          // Facture au moins 2x plus élevée que la moyenne
+          controles.push({
+            type: 'ANOMALIE_MONTANT',
+            severite: montant > moyenne * 5 ? 'HAUTE' : 'MOYENNE',
+            titre: `Facture ${facture.numero} avec montant inhabituel`,
+            description: `Facture de ${montant.toLocaleString('fr-FR')} FCFA (moyenne: ${Math.round(moyenne).toLocaleString('fr-FR')} FCFA). Montant ${((montant / moyenne - 1) * 100).toFixed(0)}% supérieur à la moyenne.`,
+            dateDetection: maintenant,
+            lien: `/factures/${facture.id}`,
+            metadata: {
+              factureId: facture.id,
+              numero: facture.numero,
+              montant,
+              moyenne,
+              ecartPourcentage: ((montant / moyenne - 1) * 100),
+            },
+          });
+        }
+      }
+    }
+
+    // Analyser les dépenses
+    const depenses = await this.prisma.depense.findMany({
+      where: { societeId },
+      orderBy: { date: 'desc' },
+      take: 100,
+    });
+
+    if (depenses.length >= 3) {
+      const montantsDepenses = depenses.map((d) => Number(d.montant));
+      const moyenneDepenses = montantsDepenses.reduce((a, b) => a + b, 0) / montantsDepenses.length;
+      const seuilDepenseAnormal = moyenneDepenses * 3;
+
+      for (const depense of depenses) {
+        if (depense.date >= dateLimite) {
+          const montant = Number(depense.montant);
+          if (montant > seuilDepenseAnormal) {
+            controles.push({
+              type: 'ANOMALIE_MONTANT',
+              severite: 'MOYENNE',
+              titre: `Dépense avec montant inhabituel`,
+              description: `Dépense du ${depense.date.toLocaleDateString('fr-FR')} de ${montant.toLocaleString('fr-FR')} FCFA (moyenne: ${Math.round(moyenneDepenses).toLocaleString('fr-FR')} FCFA)`,
+              dateDetection: maintenant,
+              lien: `/tresorerie`,
+              metadata: {
+                depenseId: depense.id,
+                montant,
+                moyenne: moyenneDepenses,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    return controles;
+  }
+
+  /**
+   * Contrôle 6: Dates suspectes (futur, rétroactif)
+   */
+  private async controleDatesSuspectes(
+    societeId: string,
+  ): Promise<ControleAudit[]> {
+    const controles: ControleAudit[] = [];
+    const maintenant = new Date();
+    const demain = new Date(maintenant.getTime() + 24 * 60 * 60 * 1000);
+
+    // Factures datées dans le futur
+    const facturesFutures = await this.prisma.facture.findMany({
+      where: {
+        societeId,
+        date: { gt: maintenant },
+      },
+      include: { client: true },
+    });
+
+    for (const facture of facturesFutures) {
+      const joursDansFutur = Math.ceil(
+        (facture.date.getTime() - maintenant.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      controles.push({
+        type: 'DATE_SUSPECTE',
+        severite: joursDansFutur > 30 ? 'HAUTE' : 'MOYENNE',
+        titre: `Facture ${facture.numero} datée dans le futur`,
+        description: `Facture datée du ${facture.date.toLocaleDateString('fr-FR')} (${joursDansFutur} jours dans le futur). Date actuelle: ${maintenant.toLocaleDateString('fr-FR')}`,
+        dateDetection: maintenant,
+        lien: `/factures/${facture.id}`,
+        metadata: {
+          factureId: facture.id,
+          numero: facture.numero,
+          dateFacture: facture.date,
+          joursDansFutur,
+        },
+      });
+    }
+
+    // Écritures comptables très rétroactives (> 1 an)
+    const unAnAuparavant = new Date(maintenant.getTime() - 365 * 24 * 60 * 60 * 1000);
+    const ecrituresRetroactives = await this.prisma.ecritureComptable.findMany({
+      where: {
+        societeId,
+        date: { lt: unAnAuparavant },
+        createdAt: { gte: new Date(maintenant.getTime() - 7 * 24 * 60 * 60 * 1000) }, // Créées récemment
+      },
+    });
+
+    for (const ecriture of ecrituresRetroactives) {
+      const joursRetroactifs = Math.ceil(
+        (maintenant.getTime() - ecriture.date.getTime()) / (1000 * 60 * 60 * 24),
+      );
+      controles.push({
+        type: 'DATE_SUSPECTE',
+        severite: joursRetroactifs > 365 ? 'HAUTE' : 'MOYENNE',
+        titre: `Écriture comptable très rétroactive`,
+        description: `Écriture créée récemment mais datée du ${ecriture.date.toLocaleDateString('fr-FR')} (${joursRetroactifs} jours dans le passé). Libellé: "${ecriture.libelle}"`,
+        dateDetection: maintenant,
+        lien: `/plan-comptable`,
+        metadata: {
+          ecritureId: ecriture.id,
+          dateEcriture: ecriture.date,
+          joursRetroactifs,
+          libelle: ecriture.libelle,
+        },
+      });
+    }
+
+    return controles;
+  }
+
+  /**
+   * Contrôle 7: Incohérences comptables (analyse de cohérence)
+   */
+  private async controleIncoherencesComptables(
+    societeId: string,
+  ): Promise<ControleAudit[]> {
+    const controles: ControleAudit[] = [];
+    const maintenant = new Date();
+
+    // Vérifier les écritures avec montant = 0
+    const ecrituresZero = await this.prisma.ecritureComptable.findMany({
+      where: {
+        societeId,
+        montant: { equals: 0 },
+      },
+      take: 20,
+    });
+
+    for (const ecriture of ecrituresZero) {
+      controles.push({
+        type: 'INCOHERENCE_COMPTABILITE',
+        severite: 'BASSE',
+        titre: `Écriture comptable avec montant zéro`,
+        description: `Écriture du ${ecriture.date.toLocaleDateString('fr-FR')} avec montant 0 FCFA. Libellé: "${ecriture.libelle}"`,
+        dateDetection: maintenant,
+        lien: `/plan-comptable`,
+        metadata: {
+          ecritureId: ecriture.id,
+          libelle: ecriture.libelle,
+        },
+      });
+    }
+
+    // Vérifier les écritures où débit = crédit (peut être normal mais à vérifier)
+    // On ne peut pas vérifier ça directement car débit et crédit sont sur des comptes différents
+    // Mais on peut vérifier les écritures avec des montants très élevés isolés
+
+    // Vérifier les factures sans écriture comptable associée (si applicable)
+    const facturesSansEcriture = await this.prisma.facture.findMany({
+      where: {
+        societeId,
+        date: { gte: new Date(maintenant.getTime() - 90 * 24 * 60 * 60 * 1000) }, // 3 derniers mois
+      },
+    });
+
+    for (const facture of facturesSansEcriture) {
+      const ecrituresAssociees = await this.prisma.ecritureComptable.findMany({
+        where: {
+          societeId,
+          pieceJustificative: { contains: facture.numero },
+        },
+      });
+
+      if (ecrituresAssociees.length === 0) {
+        controles.push({
+          type: 'INCOHERENCE_COMPTABILITE',
+          severite: 'MOYENNE',
+          titre: `Facture ${facture.numero} sans écriture comptable`,
+          description: `Facture du ${facture.date.toLocaleDateString('fr-FR')} de ${Number(facture.totalTTC).toLocaleString('fr-FR')} FCFA n'a pas d'écriture comptable associée`,
+          dateDetection: maintenant,
+          lien: `/factures/${facture.id}`,
+          metadata: {
+            factureId: facture.id,
+            numero: facture.numero,
+            montant: Number(facture.totalTTC),
+          },
+        });
+      }
+    }
+
+    return controles;
+  }
+
+  /**
+   * Contrôle 8: Comptes erronés (écritures sur mauvais compte comptable)
+   */
+  private async controleComptesErrones(
+    societeId: string,
+  ): Promise<ControleAudit[]> {
+    const controles: ControleAudit[] = [];
+    const maintenant = new Date();
+
+    // Récupérer les écritures récentes
+    const ecritures = await this.prisma.ecritureComptable.findMany({
+      where: {
+        societeId,
+        date: { gte: new Date(maintenant.getTime() - 30 * 24 * 60 * 60 * 1000) }, // 30 derniers jours
+      },
+      include: {
+        compteDebit: true,
+        compteCredit: true,
+      },
+    });
+
+    // Vérifier les écritures où débit et crédit sont sur le même compte (erreur classique)
+    for (const ecriture of ecritures) {
+      if (ecriture.compteDebitId === ecriture.compteCreditId) {
+        controles.push({
+          type: 'COMPTE_ERRONE',
+          severite: 'HAUTE',
+          titre: `Écriture avec même compte en débit et crédit`,
+          description: `Écriture du ${ecriture.date.toLocaleDateString('fr-FR')} : compte ${ecriture.compteDebit.code} (${ecriture.compteDebit.libelle}) utilisé en débit ET crédit. Libellé: "${ecriture.libelle}"`,
+          dateDetection: maintenant,
+          lien: `/plan-comptable`,
+          metadata: {
+            ecritureId: ecriture.id,
+            compteId: ecriture.compteDebitId,
+            compteCode: ecriture.compteDebit.code,
+            libelle: ecriture.libelle,
+          },
+        });
+      }
+
+      // Vérifier les écritures sur des comptes de classe 1 (immobilisations) avec de petits montants (suspect)
+      if (
+        (ecriture.compteDebit.code.startsWith('2') || ecriture.compteCredit.code.startsWith('2')) &&
+        Number(ecriture.montant) < 10000
+      ) {
+        controles.push({
+          type: 'COMPTE_ERRONE',
+          severite: 'MOYENNE',
+          titre: `Écriture suspecte sur compte d'immobilisation`,
+          description: `Écriture du ${ecriture.date.toLocaleDateString('fr-FR')} de ${Number(ecriture.montant).toLocaleString('fr-FR')} FCFA sur compte d'immobilisation (classe 2). Vérifier si ce n'est pas une charge (classe 6).`,
+          dateDetection: maintenant,
+          lien: `/plan-comptable`,
+          metadata: {
+            ecritureId: ecriture.id,
+            compteDebitCode: ecriture.compteDebit.code,
+            compteCreditCode: ecriture.compteCredit.code,
+            montant: Number(ecriture.montant),
+          },
+        });
+      }
+    }
+
+    return controles;
+  }
+
+  /**
+   * Contrôle 9: Alertes trésorerie (risques de découvert, seuils)
+   */
+  private async controleAlertesTresorerie(
+    societeId: string,
+  ): Promise<ControleAudit[]> {
+    const controles: ControleAudit[] = [];
+    const maintenant = new Date();
+
+    // Récupérer tous les comptes bancaires
+    const comptesBancaires = await this.prisma.compteBancaire.findMany({
+      where: { societeId },
+      include: {
+        transactions: {
+          where: {
+            date: { lte: maintenant },
+          },
+          orderBy: { date: 'desc' },
+        },
+      },
+    });
+
+    for (const compte of comptesBancaires) {
+      // Calculer le solde actuel
+      let solde = Number(compte.soldeInitial || 0);
+      for (const transaction of compte.transactions) {
+        solde += Number(transaction.montant);
+      }
+
+      // Alerte si solde négatif ou très faible
+      if (solde < 0) {
+        controles.push({
+          type: 'ALERTE_TRESORERIE',
+          severite: 'HAUTE',
+          titre: `Compte ${compte.nom} en découvert`,
+          description: `Le compte bancaire "${compte.nom}" présente un solde négatif de ${Math.abs(solde).toLocaleString('fr-FR')} FCFA`,
+          dateDetection: maintenant,
+          lien: `/comptes-bancaires`,
+          metadata: {
+            compteBancaireId: compte.id,
+            compteNom: compte.nom,
+            solde,
+          },
+        });
+      } else if (solde < 100000) {
+        // Solde < 100 000 FCFA = alerte moyenne
+        controles.push({
+          type: 'ALERTE_TRESORERIE',
+          severite: 'MOYENNE',
+          titre: `Solde faible sur le compte ${compte.nom}`,
+          description: `Le compte "${compte.nom}" présente un solde faible de ${solde.toLocaleString('fr-FR')} FCFA`,
+          dateDetection: maintenant,
+          lien: `/comptes-bancaires`,
+          metadata: {
+            compteBancaireId: compte.id,
+            compteNom: compte.nom,
+            solde,
+          },
+        });
+      }
+
+      // Vérifier les factures impayées qui pourraient impacter la trésorerie
+      const facturesImpayees = await this.prisma.facture.findMany({
+        where: {
+          societeId,
+          statut: { in: ['ENVOYEE', 'BROUILLON'] },
+        },
+        include: {
+          paiements: true,
+        },
+      });
+
+      let totalImpaye = 0;
+      for (const facture of facturesImpayees) {
+        const totalPaye = facture.paiements.reduce((sum, p) => sum + Number(p.montant), 0);
+        const resteAPayer = Number(facture.totalTTC) - totalPaye;
+        if (resteAPayer > 0) {
+          totalImpaye += resteAPayer;
+        }
+      }
+
+      // Si le total impayé représente plus de 50% du solde actuel, alerte
+      if (solde > 0 && totalImpaye > solde * 0.5) {
+        controles.push({
+          type: 'ALERTE_TRESORERIE',
+          severite: 'MOYENNE',
+          titre: `Risque de trésorerie : factures impayées importantes`,
+          description: `Le total des factures impayées (${totalImpaye.toLocaleString('fr-FR')} FCFA) représente ${((totalImpaye / solde) * 100).toFixed(0)}% du solde actuel (${solde.toLocaleString('fr-FR')} FCFA)`,
+          dateDetection: maintenant,
+          lien: `/factures`,
+          metadata: {
+            solde,
+            totalImpaye,
+            pourcentage: (totalImpaye / solde) * 100,
+          },
+        });
+      }
+    }
+
+    return controles;
   }
 }

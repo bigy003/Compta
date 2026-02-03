@@ -12,7 +12,26 @@ interface Client {
   nom: string;
 }
 
+interface Devise {
+  code: string;
+  nom: string;
+  symbole: string;
+  estParDefaut: boolean;
+  actif: boolean;
+}
+
 interface Facture {
+  id: string;
+  numero: string;
+  date: string;
+  statut: string;
+  totalHT: number;
+  totalTVA: number;
+  totalTTC: number;
+  deviseId?: string | null;
+  tauxChange?: number | null;
+  montantDeviseEtrangere?: number | null;
+  client: Client;
   id: string;
   numero: string;
   date: string;
@@ -42,8 +61,17 @@ export default function ExpertFacturesPage() {
   const router = useRouter();
   const societeId = params.id;
 
+  // Devises par défaut (fallback si API ne répond pas)
+  const devisesParDefaut: Devise[] = [
+    { code: "XOF", nom: "Franc CFA", symbole: "FCFA", estParDefaut: true, actif: true },
+    { code: "EUR", nom: "Euro", symbole: "€", estParDefaut: false, actif: true },
+    { code: "USD", nom: "Dollar US", symbole: "$", estParDefaut: false, actif: true },
+  ];
+
   const [factures, setFactures] = useState<Facture[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [devises, setDevises] = useState<Devise[]>(devisesParDefaut);
+  const [deviseCode, setDeviseCode] = useState<string>("XOF");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState("");
@@ -109,13 +137,33 @@ export default function ExpertFacturesPage() {
     setFactures(data);
   }
 
+  async function loadDevises() {
+    try {
+      const resDevises = await fetch(`${API_URL}/devises`);
+      if (resDevises.ok) {
+        const devisesData = (await resDevises.json()) as Devise[];
+        if (Array.isArray(devisesData) && devisesData.length > 0) {
+          setDevises(devisesData);
+          const def =
+            devisesData.find((d) => d.estParDefaut) ?? devisesData[0];
+          if (def) {
+            setDeviseCode(def.code);
+          }
+        }
+      }
+    } catch (err) {
+      console.debug("Erreur chargement devises:", err);
+      // Utiliser les devises par défaut déjà définies
+    }
+  }
+
   useEffect(() => {
     async function load() {
       try {
         setLoading(true);
         setError(null);
         if (societeId) {
-          await Promise.all([loadClients(), loadFactures()]);
+          await Promise.all([loadClients(), loadFactures(), loadDevises()]);
         }
       } catch (err: any) {
         setError(err.message || "Erreur inconnue");
@@ -148,6 +196,7 @@ export default function ExpertFacturesPage() {
           body: JSON.stringify({
             clientId,
             date: isoDate,
+            deviseCode,
             lignes: [
               {
                 designation: ligne.designation,
@@ -455,6 +504,34 @@ export default function ExpertFacturesPage() {
 
             <div className="space-y-1">
               <label className="block text-sm font-medium text-zinc-700">
+                Devise
+              </label>
+              <select
+                value={deviseCode}
+                onChange={(e) => setDeviseCode(e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
+              >
+                {devises.length > 0 ? (
+                  devises.map((d) => (
+                    <option key={d.code} value={d.code}>
+                      {d.code} ({d.symbole}) - {d.nom}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="XOF">XOF (FCFA) - Franc CFA</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="USD">USD ($) - Dollar US</option>
+                  </>
+                )}
+              </select>
+              <p className="text-xs text-zinc-500">
+                Les montants seront convertis automatiquement en FCFA pour la comptabilité.
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-zinc-700">
                 Désignation
               </label>
               <input
@@ -558,6 +635,7 @@ export default function ExpertFacturesPage() {
                     <th className="py-2 pr-4">Date</th>
                     <th className="py-2 pr-4">Client</th>
                     <th className="py-2 pr-4">Statut</th>
+                    <th className="py-2 pr-4 text-right">Devise</th>
                     <th className="py-2 pr-4 text-right">Total HT</th>
                     <th className="py-2 pr-4 text-right">Total TTC</th>
                     <th className="py-2 pr-4 text-right">PDF</th>
@@ -613,6 +691,19 @@ export default function ExpertFacturesPage() {
                           <option value="PAYEE">Payée</option>
                           <option value="ANNULEE">Annulée</option>
                         </select>
+                      </td>
+                      <td className="py-2 pr-4 text-right text-zinc-900">
+                        {f.deviseId && f.deviseId !== "XOF" && f.montantDeviseEtrangere
+                          ? `${Number(f.montantDeviseEtrangere).toLocaleString(
+                              "fr-FR",
+                              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                            )} ${f.deviseId}`
+                          : f.deviseId && f.deviseId !== "XOF"
+                          ? `${Number(f.totalTTC).toLocaleString(
+                              "fr-FR",
+                              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                            )} ${f.deviseId}`
+                          : "FCFA"}
                       </td>
                       <td className="py-2 pr-4 text-right text-zinc-900">
                         {f.totalHT.toLocaleString("fr-FR")} FCFA

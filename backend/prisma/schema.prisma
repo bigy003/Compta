@@ -28,6 +28,7 @@ model User {
   role     Role    @default(PME)
 
   societesPossedees Societe[] @relation("OwnerSocietes")
+  alertes           Alerte[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -54,6 +55,9 @@ model Societe {
   comptesBancaires    CompteBancaire[]
   ecrituresComptables EcritureComptable[]
   declarationsTVA     DeclarationTVA[]
+  declarationsFiscales DeclarationFiscale[]
+  echeancesFiscales   EcheanceFiscale[]
+  alertes             Alerte[]
   exercices           Exercice[]
   documents           Document[]
   rapprochementsFacture RapprochementFacture[]
@@ -191,6 +195,11 @@ model Facture {
   numero    String   @unique
   date      DateTime
   statut    String   @default("BROUILLON") // BROUILLON, ENVOYEE, PAYEE, ANNULEE
+
+  // Multi-devises
+  deviseId  String?  // Code devise (XOF, EUR, USD) - null = XOF par défaut
+  tauxChange Decimal? // Taux de change au moment de la création (1 devise = X XOF)
+  montantDeviseEtrangere Decimal? // Montant dans la devise étrangère (si différent de XOF)
 
   totalHT  Decimal @default(0)
   totalTVA Decimal @default(0)
@@ -417,9 +426,46 @@ model DeclarationTVA {
   montantTTCAchats Decimal @default(0)
 
   societe Societe @relation(fields: [societeId], references: [id])
+  echeancesFiscales EcheanceFiscale[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model DeclarationFiscale {
+  id              String   @id @default(cuid())
+  societeId       String
+  type            String   // TVA, IS, CNPS, RETENUE_SOURCE, BIC
+  periode         String   // Format: "YYYY-MM" pour mensuel, "YYYY" pour annuel
+  dateDeclaration DateTime @default(now())
+  statut          String   @default("BROUILLON") // BROUILLON, ENVOYEE, VALIDEE, REJETEE
+  
+  // Données JSON pour flexibilité selon le type
+  donnees         Json     // Structure variable selon le type de déclaration
+  
+  // Validation
+  validee         Boolean  @default(false)
+  dateValidation  DateTime?
+  validateurId    String?  // ID de l'utilisateur qui a validé
+  
+  // Export
+  fichierPDF      String?  // Chemin vers le PDF généré
+  fichierXML      String?  // Chemin vers le XML DGI (si applicable)
+  referenceDGI    String?  // Numéro de référence DGI après dépôt
+  
+  // Notes et commentaires
+  notes           String?
+  erreurs         Json?    // Liste des erreurs détectées lors de la validation
+  
+  societe Societe @relation(fields: [societeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId, type])
+  @@index([societeId, periode])
+  @@index([societeId, statut])
+  @@index([type, periode])
 }
 
 model Paiement {
@@ -484,4 +530,107 @@ model Document {
 
   @@index([societeId, statut])
   @@index([societeId, type])
+}
+
+model EcheanceFiscale {
+  id              String   @id @default(cuid())
+  societeId       String
+  type            String   // TVA, IS, CNPS, DOUANES, RETENUE_SOURCE, AUTRE
+  libelle         String   // "Déclaration TVA mensuelle", "Déclaration IS annuelle", etc.
+  dateEcheance    DateTime // Date limite pour la déclaration/paiement
+  periode         String?  // Période concernée (ex: "2024-01" pour TVA mensuelle, "2024" pour IS annuelle)
+  statut          String   @default("A_FAIRE") // A_FAIRE, EN_COURS, FAITE, EN_RETARD, ANNULEE
+  montantEstime   Decimal? // Montant estimé à payer (calculé automatiquement si possible)
+  dateRealisation DateTime? // Date réelle de déclaration/paiement
+  reference       String?  // Numéro de référence de la déclaration (si faite)
+  notes           String?  // Notes optionnelles
+  
+  // Rappels envoyés
+  rappel7Jours    Boolean  @default(false) // Rappel envoyé 7 jours avant
+  rappel3Jours    Boolean  @default(false) // Rappel envoyé 3 jours avant
+  rappelJourJ     Boolean  @default(false) // Rappel envoyé le jour J
+  rappelRetard    Boolean  @default(false) // Rappel envoyé en cas de retard
+  
+  // Lien avec déclaration si applicable
+  declarationTVAId String? // Si type = TVA, lien vers DeclarationTVA
+  
+  societe         Societe  @relation(fields: [societeId], references: [id])
+  declarationTVA  DeclarationTVA? @relation(fields: [declarationTVAId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId, statut])
+  @@index([societeId, type])
+  @@index([dateEcheance])
+  @@index([societeId, dateEcheance])
+}
+
+model Alerte {
+  id              String   @id @default(cuid())
+  societeId       String
+  userId          String?  // Si null, alerte pour tous les utilisateurs de la société
+  type            String   // FACTURE_IMPAYEE, ECHEANCE_FISCALE, ALERTE_TRESORERIE, ANOMALIE, etc.
+  titre           String
+  message         String
+  severite        String   @default("MOYENNE") // HAUTE, MOYENNE, BASSE
+  statut          String   @default("NON_LUE") // NON_LUE, LUE, IGNOREE, RESOLUE
+  dateAlerte      DateTime @default(now())
+  dateLecture     DateTime?
+  dateResolution  DateTime?
+  
+  // Lien vers l'élément concerné
+  lien            String?  // URL relative (ex: /factures/123)
+  elementId       String?  // ID de l'élément (facture, échéance, etc.)
+  elementType     String?  // Type d'élément (FACTURE, ECHEANCE_FISCALE, etc.)
+  
+  // Métadonnées JSON pour flexibilité
+  metadata        Json?
+  
+  // Notifications envoyées
+  emailEnvoye     Boolean  @default(false)
+  smsEnvoye       Boolean  @default(false)
+  inAppAffichee   Boolean  @default(false)
+  
+  societe         Societe  @relation(fields: [societeId], references: [id])
+  user            User?    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([societeId, statut])
+  @@index([societeId, type])
+  @@index([userId, statut])
+  @@index([dateAlerte])
+  @@index([societeId, dateAlerte])
+}
+
+model Devise {
+  id          String   @id @default(cuid())
+  code        String   @unique // XOF, EUR, USD, etc.
+  nom         String   // Franc CFA, Euro, Dollar US
+  symbole     String   // FCFA, €, $
+  estParDefaut Boolean  @default(false) // XOF par défaut pour Côte d'Ivoire
+  actif       Boolean  @default(true)
+  
+  tauxChanges TauxChange[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TauxChange {
+  id            String   @id @default(cuid())
+  deviseId      String
+  deviseBase    String   @default("XOF") // Toujours par rapport à XOF (FCFA)
+  taux          Decimal  // 1 EUR = X XOF
+  date          DateTime @default(now())
+  source        String   @default("BCEAO") // BCEAO, MANUEL, API_PUBLIQUE
+  
+  devise        Devise   @relation(fields: [deviseId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([deviseId, date])
+  @@index([date])
 }

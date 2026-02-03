@@ -23,6 +23,10 @@ import { BudgetModule } from './budget/budget.module';
 import { StockModule } from './stock/stock.module';
 import { ImmobilisationsModule } from './immobilisations/immobilisations.module';
 import { ChatModule } from './chat/chat.module';
+import { EcheancesFiscalesModule } from './echeances-fiscales/echeances-fiscales.module';
+import { DeclarationsFiscalesModule } from './declarations-fiscales/declarations-fiscales.module';
+import { AlertesModule } from './alertes/alertes.module';
+import { DevisesModule } from './devises/devises.module';
 
 @Module({
   imports: [
@@ -48,6 +52,10 @@ import { ChatModule } from './chat/chat.module';
     StockModule,
     ImmobilisationsModule,
     ChatModule,
+    EcheancesFiscalesModule,
+    DeclarationsFiscalesModule,
+    AlertesModule,
+    DevisesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

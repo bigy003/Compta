@@ -22,6 +22,7 @@ class CreateFactureDto {
   clientId: string;
   date: string;
   lignes: FactureLigneDto[];
+  deviseCode?: string;
 }
 
 @Controller('societes/:societeId/factures')

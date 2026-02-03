@@ -12,6 +12,14 @@ interface Client {
   nom: string;
 }
 
+interface Devise {
+  code: string;
+  nom: string;
+  symbole: string;
+  estParDefaut: boolean;
+  actif: boolean;
+}
+
 interface Facture {
   id: string;
   numero: string;
@@ -20,6 +28,9 @@ interface Facture {
   totalHT: number;
   totalTVA: number;
   totalTTC: number;
+  deviseId?: string | null;
+  tauxChange?: number | null;
+  montantDeviseEtrangere?: number | null;
   client: Client;
   clientId?: string;
   lignes?: Array<{
@@ -41,6 +52,15 @@ export default function FacturesPage() {
   const router = useRouter();
   const [societeId, setSocieteId] = useState<string | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  // Devises par défaut (fallback si API ne répond pas)
+  const devisesParDefaut: Devise[] = [
+    { code: "XOF", nom: "Franc CFA", symbole: "FCFA", estParDefaut: true, actif: true },
+    { code: "EUR", nom: "Euro", symbole: "€", estParDefaut: false, actif: true },
+    { code: "USD", nom: "Dollar US", symbole: "$", estParDefaut: false, actif: true },
+  ];
+  
+  const [devises, setDevises] = useState<Devise[]>(devisesParDefaut);
+  const [deviseCode, setDeviseCode] = useState<string>("XOF");
   const [factures, setFactures] = useState<Facture[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +119,50 @@ export default function FacturesPage() {
         setClientId(clientsData[0].id);
       }
 
-      // 3. Factures
+      // 3. Devises
+      try {
+        const resDevises = await fetch(`${API_URL}/devises`);
+        if (resDevises.ok) {
+          const devisesData = (await resDevises.json()) as Devise[];
+          if (Array.isArray(devisesData) && devisesData.length > 0) {
+            setDevises(devisesData);
+            const def =
+              devisesData.find((d) => d.estParDefaut) ?? devisesData[0];
+            if (def) {
+              setDeviseCode(def.code);
+            }
+          } else {
+            // Si pas de devises, créer les devises par défaut côté client
+            console.warn("Aucune devise trouvée, utilisation des devises par défaut");
+            setDevises([
+              { code: "XOF", nom: "Franc CFA", symbole: "FCFA", estParDefaut: true, actif: true },
+              { code: "EUR", nom: "Euro", symbole: "€", estParDefaut: false, actif: true },
+              { code: "USD", nom: "Dollar US", symbole: "$", estParDefaut: false, actif: true },
+            ]);
+            setDeviseCode("XOF");
+          }
+        } else {
+          console.warn("Erreur chargement devises:", resDevises.status);
+          // Fallback : devises par défaut
+          setDevises([
+            { code: "XOF", nom: "Franc CFA", symbole: "FCFA", estParDefaut: true, actif: true },
+            { code: "EUR", nom: "Euro", symbole: "€", estParDefaut: false, actif: true },
+            { code: "USD", nom: "Dollar US", symbole: "$", estParDefaut: false, actif: true },
+          ]);
+          setDeviseCode("XOF");
+        }
+      } catch (err) {
+        console.error("Erreur chargement devises:", err);
+        // Fallback : devises par défaut
+        setDevises([
+          { code: "XOF", nom: "Franc CFA", symbole: "FCFA", estParDefaut: true, actif: true },
+          { code: "EUR", nom: "Euro", symbole: "€", estParDefaut: false, actif: true },
+          { code: "USD", nom: "Dollar US", symbole: "$", estParDefaut: false, actif: true },
+        ]);
+        setDeviseCode("XOF");
+      }
+
+      // 4. Factures
       await loadFactures(firstId);
     } catch (err: any) {
       setError(err.message || "Erreur inconnue");
@@ -154,6 +217,7 @@ export default function FacturesPage() {
           body: JSON.stringify({
             clientId,
             date: isoDate,
+            deviseCode,
             lignes: [
               {
                 designation: ligne.designation,
@@ -402,7 +466,11 @@ export default function FacturesPage() {
                   {factures.length}
                 </p>
                 <p className="mt-1 text-xs text-zinc-500">
-                  Total TTC: {factures.reduce((sum, f) => sum + f.totalTTC, 0).toLocaleString("fr-FR")} FCFA
+                  Total TTC (comptable):{" "}
+                  {factures
+                    .reduce((sum, f) => sum + f.totalTTC, 0)
+                    .toLocaleString("fr-FR")}{" "}
+                  FCFA
                 </p>
               </div>
               <div className="flex gap-2">
@@ -459,6 +527,34 @@ export default function FacturesPage() {
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
               />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-sm font-medium text-zinc-700">
+                Devise
+              </label>
+              <select
+                value={deviseCode}
+                onChange={(e) => setDeviseCode(e.target.value)}
+                className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-zinc-900 focus:ring-1 focus:ring-zinc-900"
+              >
+                {devises.length > 0 ? (
+                  devises.map((d) => (
+                    <option key={d.code} value={d.code}>
+                      {d.code} ({d.symbole}) - {d.nom}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="XOF">XOF (FCFA) - Franc CFA</option>
+                    <option value="EUR">EUR (€) - Euro</option>
+                    <option value="USD">USD ($) - Dollar US</option>
+                  </>
+                )}
+              </select>
+              <p className="text-xs text-zinc-500">
+                Les montants seront convertis automatiquement en FCFA pour la comptabilité.
+              </p>
             </div>
 
             <div className="space-y-1">
@@ -566,6 +662,7 @@ export default function FacturesPage() {
                     <th className="py-2 pr-4">Date</th>
                     <th className="py-2 pr-4">Client</th>
                     <th className="py-2 pr-4">Statut</th>
+                    <th className="py-2 pr-4 text-right">Devise</th>
                     <th className="py-2 pr-4 text-right">Total HT</th>
                     <th className="py-2 pr-4 text-right">Total TTC</th>
                     <th className="py-2 pr-4 text-right">PDF</th>
@@ -621,6 +718,19 @@ export default function FacturesPage() {
                           <option value="PAYEE">Payée</option>
                           <option value="ANNULEE">Annulée</option>
                         </select>
+                      </td>
+                      <td className="py-2 pr-4 text-right text-zinc-900">
+                        {f.deviseId && f.deviseId !== "XOF" && f.montantDeviseEtrangere
+                          ? `${Number(f.montantDeviseEtrangere).toLocaleString(
+                              "fr-FR",
+                              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                            )} ${f.deviseId}`
+                          : f.deviseId && f.deviseId !== "XOF"
+                          ? `${Number(f.totalTTC).toLocaleString(
+                              "fr-FR",
+                              { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                            )} ${f.deviseId}`
+                          : "FCFA"}
                       </td>
                       <td className="py-2 pr-4 text-right text-zinc-900">
                         {f.totalHT.toLocaleString("fr-FR")} FCFA
