@@ -27,6 +27,7 @@ import { EcheancesFiscalesModule } from './echeances-fiscales/echeances-fiscales
 import { DeclarationsFiscalesModule } from './declarations-fiscales/declarations-fiscales.module';
 import { AlertesModule } from './alertes/alertes.module';
 import { DevisesModule } from './devises/devises.module';
+import { BanqueModule } from './banque/banque.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { DevisesModule } from './devises/devises.module';
     DeclarationsFiscalesModule,
     AlertesModule,
     DevisesModule,
+    BanqueModule,
   ],
   controllers: [AppController],
   providers: [AppService],

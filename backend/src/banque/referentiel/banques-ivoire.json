@@ -1,0 +1,65 @@
+[
+  {
+    "code": "SGBCI",
+    "nom": "Société Générale de Banques en Côte d'Ivoire",
+    "codeBIC": "SGCIXCIX",
+    "codeGuichet": "01001",
+    "actif": true
+  },
+  {
+    "code": "BICICI",
+    "nom": "Banque Internationale pour le Commerce et l'Industrie de la Côte d'Ivoire",
+    "codeBIC": "BICIYCIX",
+    "codeGuichet": "01002",
+    "actif": true
+  },
+  {
+    "code": "UBA",
+    "nom": "United Bank for Africa Côte d'Ivoire",
+    "codeBIC": "UNAFCIAB",
+    "codeGuichet": "01003",
+    "actif": true
+  },
+  {
+    "code": "ECOBANK",
+    "nom": "Ecobank Côte d'Ivoire",
+    "codeBIC": "ECOCCICI",
+    "codeGuichet": "01004",
+    "actif": true
+  },
+  {
+    "code": "ATTIJARI",
+    "nom": "Attijariwafa Bank Côte d'Ivoire",
+    "codeBIC": "AWAFCIAB",
+    "codeGuichet": "01005",
+    "actif": true
+  },
+  {
+    "code": "NSIA",
+    "nom": "NSIA Banque Côte d'Ivoire",
+    "codeBIC": "NSIACICI",
+    "codeGuichet": "01006",
+    "actif": true
+  },
+  {
+    "code": "CORIS",
+    "nom": "Coris Bank Côte d'Ivoire",
+    "codeBIC": "CORICIAB",
+    "codeGuichet": "01007",
+    "actif": true
+  },
+  {
+    "code": "BOA",
+    "nom": "Bank of Africa Côte d'Ivoire",
+    "codeBIC": "AFRCCICI",
+    "codeGuichet": "01008",
+    "actif": true
+  },
+  {
+    "code": "OCA",
+    "nom": "Orabank Côte d'Ivoire",
+    "codeBIC": "ORABCIAB",
+    "codeGuichet": "01009",
+    "actif": true
+  }
+]

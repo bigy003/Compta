@@ -58,6 +58,9 @@ model Societe {
   declarationsFiscales DeclarationFiscale[]
   echeancesFiscales   EcheanceFiscale[]
   alertes             Alerte[]
+  reglesLettrage      RegleLettrage[]
+  rapprochementsComptables RapprochementComptable[]
+  ecartsRapprochement EcartRapprochement[]
   exercices           Exercice[]
   documents           Document[]
   rapprochementsFacture RapprochementFacture[]
@@ -308,8 +311,9 @@ model NoteFrais {
 model CompteBancaire {
   id           String  @id @default(cuid())
   societeId    String
+  banqueIvoireId String? // Référence à la banque ivoirienne
   nom          String // Ex: "Compte principal", "Compte épargne"
-  banque       String? // Nom de la banque
+  banque       String? // Nom de la banque (déprécié, utiliser banqueIvoireId)
   numeroCompte String? // Numéro de compte
   iban         String? // IBAN (optionnel)
   devise       String  @default("FCFA") // FCFA, EUR, USD, etc.
@@ -317,7 +321,9 @@ model CompteBancaire {
   actif        Boolean @default(true) // Compte actif ou archivé
 
   societe      Societe               @relation(fields: [societeId], references: [id])
+  banqueIvoire BanqueIvoire?         @relation(fields: [banqueIvoireId], references: [id])
   transactions TransactionBancaire[]
+  ecartsRapprochement EcartRapprochement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -340,6 +346,7 @@ model TransactionBancaire {
   recette             Recette?               @relation("RecetteTransaction", fields: [recetteId], references: [id])
   depense             Depense?               @relation("DepenseTransaction", fields: [depenseId], references: [id])
   rapprochementsFacture RapprochementFacture[]
+  rapprochementsComptables RapprochementComptable[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -358,6 +365,7 @@ model CompteComptable {
   enfants         CompteComptable[]   @relation("CompteHierarchy")
   ecrituresDebit  EcritureComptable[] @relation("CompteDebit")
   ecrituresCredit EcritureComptable[] @relation("CompteCredit")
+  rapprochementsComptables RapprochementComptable[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -398,6 +406,7 @@ model EcritureComptable {
   exercice     Exercice?       @relation(fields: [exerciceId], references: [id])
   compteDebit  CompteComptable @relation("CompteDebit", fields: [compteDebitId], references: [id])
   compteCredit CompteComptable @relation("CompteCredit", fields: [compteCreditId], references: [id])
+  rapprochementsComptables RapprochementComptable[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -633,4 +642,88 @@ model TauxChange {
 
   @@index([deviseId, date])
   @@index([date])
+}
+
+model BanqueIvoire {
+  id          String   @id @default(cuid())
+  code        String   @unique // Code banque (ex: "SGBCI", "BICICI")
+  nom         String   // Nom complet
+  codeBIC     String?  // Code BIC/SWIFT
+  codeGuichet String?  // Code guichet BCEAO
+  actif       Boolean  @default(true)
+  
+  comptesBancaires CompteBancaire[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RegleLettrage {
+  id          String   @id @default(cuid())
+  societeId   String
+  nom         String   // Nom de la règle
+  active      Boolean  @default(true)
+  priorite    Int      @default(0) // Ordre d'application (0 = priorité la plus haute)
+  
+  // Critères de matching (JSON)
+  criteres    Json     // { libelleContient: "...", montantMin: 0, montantMax: 1000000, type: "DEBIT"|"CREDIT" }
+  
+  // Action : quel compte comptable lier, quelle écriture créer
+  action      Json     // { compteComptable: "512", typeEcriture: "AUTO", compteContrepartie: "..." }
+  
+  societe     Societe  @relation(fields: [societeId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([societeId, active])
+}
+
+model RapprochementComptable {
+  id                    String   @id @default(cuid())
+  societeId             String
+  transactionBancaireId String
+  ecritureComptableId   String?  // Écriture comptable liée
+  compteComptableId     String?  // Compte 512 (banque) ou autre
+  
+  montant               Decimal
+  dateRapprochement     DateTime @default(now())
+  statut                String   @default("PENDING") // PENDING, VALIDATED, REJECTED
+  scoreConfiance        Decimal? // Score de matching (0-100)
+  notes                 String?
+  
+  societe               Societe             @relation(fields: [societeId], references: [id])
+  transactionBancaire   TransactionBancaire @relation(fields: [transactionBancaireId], references: [id])
+  ecritureComptable     EcritureComptable?  @relation(fields: [ecritureComptableId], references: [id])
+  compteComptable       CompteComptable?    @relation(fields: [compteComptableId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([societeId, statut])
+  @@index([transactionBancaireId])
+  @@index([ecritureComptableId])
+}
+
+model EcartRapprochement {
+  id              String   @id @default(cuid())
+  societeId       String
+  compteBancaireId String
+  date            DateTime
+  
+  soldeComptable  Decimal  // Solde du compte 512 en comptabilité
+  soldeBancaire   Decimal  // Solde du relevé bancaire
+  ecart           Decimal  // Différence
+  
+  typeEcart       String   // DOUBLON, MOUVEMENT_MANQUANT, OD_512, ERREUR_MONTANT, AUTRE
+  description     String?
+  resolu          Boolean  @default(false)
+  
+  societe         Societe         @relation(fields: [societeId], references: [id])
+  compteBancaire  CompteBancaire  @relation(fields: [compteBancaireId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([societeId, compteBancaireId, date])
+  @@index([societeId, resolu])
 }
